@@ -33,6 +33,10 @@ class Settings(BaseSettings):
         default="0x0000000000000000000000000000000000000000",
         description="Deployed MockUSDC token address"
     )
+    FACTORY_ADDRESS: str = Field(
+        default="0x70e0bA845a1A0F2DA3359C97E0285013525FFC49",
+        description="Deployed MandateGuardFactory address"
+    )
     
     # Policy defaults
     DEFAULT_EXPIRY_SECONDS: int = 3600  # 1 hour

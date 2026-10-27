@@ -3,10 +3,11 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Script.sol";
 import "../src/MandateGuardAccount.sol";
+import "../src/MandateGuardFactory.sol";
 import "../src/MockUSDC.sol";
 
 contract DeployScript is Script {
-    function run() external returns (MockUSDC usdc, MandateGuardAccount account) {
+    function run() external returns (MockUSDC usdc, MandateGuardAccount account, MandateGuardFactory factory) {
         // Read deployer private key from environment or fallback to Anvil Account #0
         uint256 deployerKey = vm.envOr(
             "DEPLOYER_PRIVATE_KEY",
@@ -28,10 +29,13 @@ contract DeployScript is Script {
         // 2. Deploy MandateGuardAccount with deployer as owner and designated authorizer
         account = new MandateGuardAccount(deployer, authorizer);
 
-        // 3. Fund MandateGuardAccount with 50,000 mUSDC for testing
+        // 3. Deploy MandateGuardFactory
+        factory = new MandateGuardFactory(authorizer);
+
+        // 4. Fund MandateGuardAccount with 50,000 mUSDC for testing
         usdc.mint(address(account), 50_000 * 10 ** 6);
 
-        // 4. Register a sample seed mandate for testing
+        // 5. Register a sample seed mandate for testing
         bytes32 sampleMandateId = keccak256("MANDATE_SAMPLE_DEV_001");
         address sampleMerchant = address(0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC); // Anvil Account #2
         address sampleAgent = address(0x90F79bf6EB2c4f870365E785982E1f101E93b906);    // Anvil Account #3
@@ -54,6 +58,7 @@ contract DeployScript is Script {
         console.log("Authorizer Signer:", authorizer);
         console.log("MockUSDC Address :", address(usdc));
         console.log("Smart Account    :", address(account));
+        console.log("Factory Address  :", address(factory));
         console.log("Sample Mandate ID:", vm.toString(sampleMandateId));
     }
 }
