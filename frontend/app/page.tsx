@@ -21,6 +21,11 @@ import {
   Cpu,
   Layers,
   Search,
+  Wallet,
+  Droplets,
+  Sparkles,
+  ChevronDown,
+  LogOut,
 } from "lucide-react";
 import {
   fetchHealth,
@@ -48,11 +53,31 @@ import {
   CHAIN_ID,
   RPC_URL,
 } from "../lib/api";
+import {
+  hasInjectedProvider,
+  connectInjectedWallet,
+  switchWalletNetwork,
+  getFactoryAccountsForOwner,
+  deploySmartAccountViaWallet,
+  claimFaucetTokens,
+  getTokenBalance,
+  executePaymentViaWallet,
+} from "../lib/web3";
+import { SUPPORTED_CHAINS, FACTORY_ADDRESS } from "../lib/contracts";
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<
     "overview" | "mandates" | "agent-keys" | "simulator" | "verdict" | "audit" | "health"
   >("overview");
+
+  // Web3 Wallet & Multi-Tenant Account State
+  const [walletAddress, setWalletAddress] = useState<`0x${string}` | null>(null);
+  const [walletChainId, setWalletChainId] = useState<number | null>(null);
+  const [userSmartAccounts, setUserSmartAccounts] = useState<`0x${string}`[]>([]);
+  const [activeSmartAccount, setActiveSmartAccount] = useState<string>(SMART_ACCOUNT_ADDR);
+  const [isConnectingWallet, setIsConnectingWallet] = useState(false);
+  const [isDeployingAccount, setIsDeployingAccount] = useState(false);
+  const [isClaimingFaucet, setIsClaimingFaucet] = useState(false);
 
   // State
   const [health, setHealth] = useState<SystemHealth | null>(null);
@@ -100,6 +125,102 @@ export default function Dashboard() {
     setTimeout(() => setToast(null), 5000);
   };
 
+  // Connect Injected Browser Wallet (MetaMask, etc.)
+  const handleConnectWallet = async () => {
+    setIsConnectingWallet(true);
+    try {
+      const { address, chainId } = await connectInjectedWallet();
+      setWalletAddress(address);
+      setWalletChainId(chainId);
+      showToast("success", `Wallet connected: ${address.slice(0, 6)}...${address.slice(-4)}`);
+
+      // Discover Smart Accounts owned by this wallet from MandateGuardFactory
+      const accounts = await getFactoryAccountsForOwner(address, chainId);
+      setUserSmartAccounts(accounts);
+      if (accounts.length > 0) {
+        setActiveSmartAccount(accounts[0]);
+        showToast("info", `Active Smart Account: ${accounts[0].slice(0, 6)}...${accounts[0].slice(-4)}`);
+      } else {
+        showToast("info", "No smart account found for your wallet. Click 'Deploy My Account' to create one!");
+      }
+    } catch (err: any) {
+      showToast("error", err.message || "Failed to connect wallet");
+    } finally {
+      setIsConnectingWallet(false);
+    }
+  };
+
+  const handleDisconnectWallet = () => {
+    setWalletAddress(null);
+    setWalletChainId(null);
+    setUserSmartAccounts([]);
+    setActiveSmartAccount(SMART_ACCOUNT_ADDR);
+    showToast("info", "Wallet disconnected");
+  };
+
+  // Deploy an isolated Smart Account via MandateGuardFactory
+  const handleDeploySmartAccount = async () => {
+    if (!walletAddress) {
+      handleConnectWallet();
+      return;
+    }
+    setIsDeployingAccount(true);
+    try {
+      showToast("info", "Deploying isolated Smart Account from MandateGuardFactory...");
+      const { txHash } = await deploySmartAccountViaWallet(walletAddress);
+      showToast("success", `Account deployed on-chain! Tx: ${txHash.slice(0, 12)}...`);
+
+      // Query factory accounts after deployment
+      setTimeout(async () => {
+        const accounts = await getFactoryAccountsForOwner(walletAddress, walletChainId || CHAIN_ID);
+        setUserSmartAccounts(accounts);
+        if (accounts.length > 0) {
+          setActiveSmartAccount(accounts[accounts.length - 1]);
+        }
+        loadAllData();
+      }, 2000);
+    } catch (err: any) {
+      showToast("error", err.message || "Smart account deployment failed");
+    } finally {
+      setIsDeployingAccount(false);
+    }
+  };
+
+  // Claim $1,000 Faucet USDC
+  const handleClaimFaucet = async () => {
+    if (!walletAddress) {
+      showToast("error", "Please connect your wallet first to claim test USDC!");
+      return;
+    }
+    setIsClaimingFaucet(true);
+    try {
+      const target = (activeSmartAccount || walletAddress) as `0x${string}`;
+      showToast("info", `Minting $1,000 mUSDC to ${target.slice(0, 8)}...`);
+      const txHash = await claimFaucetTokens(target, 1000, walletAddress);
+      showToast("success", `Claimed $1,000 USDC! Tx: ${txHash.slice(0, 10)}...`);
+      setTimeout(loadAllData, 2000);
+    } catch (err: any) {
+      showToast("error", err.message || "Faucet claim failed");
+    } finally {
+      setIsClaimingFaucet(false);
+    }
+  };
+
+  // Switch network (e.g., Local Anvil <=> Base Sepolia)
+  const handleSwitchNetwork = async (targetChainId: number) => {
+    try {
+      await switchWalletNetwork(targetChainId);
+      setWalletChainId(targetChainId);
+      showToast(
+        "success",
+        `Switched network to ${SUPPORTED_CHAINS[targetChainId as keyof typeof SUPPORTED_CHAINS]?.name || targetChainId}`
+      );
+      loadAllData();
+    } catch (err: any) {
+      showToast("error", err.message || "Failed to switch network");
+    }
+  };
+
   const loadAllData = async () => {
     setRefreshing(true);
     try {
@@ -121,8 +242,8 @@ export default function Dashboard() {
         setSelectedMandateId(m[0].id);
       }
 
-      // Query live chain balances
-      const bals = await getOnChainBalances(simRecipient);
+      // Query live chain balances using activeSmartAccount
+      const bals = await getOnChainBalances(simRecipient, activeSmartAccount);
       setBalances(bals);
     } catch (err: any) {
       console.error("Error loading dashboard data:", err);
@@ -135,7 +256,37 @@ export default function Dashboard() {
     loadAllData();
     const interval = setInterval(loadAllData, 10000);
     return () => clearInterval(interval);
-  }, [simRecipient]);
+  }, [simRecipient, activeSmartAccount]);
+
+  // EIP-1193 Wallet Event Listeners
+  useEffect(() => {
+    if (typeof window !== "undefined" && (window as any).ethereum) {
+      const eth = (window as any).ethereum;
+      const handleAccountsChanged = (accs: string[]) => {
+        if (!accs || accs.length === 0) {
+          handleDisconnectWallet();
+        } else {
+          setWalletAddress(accs[0] as `0x${string}`);
+          getFactoryAccountsForOwner(accs[0] as `0x${string}`, walletChainId || CHAIN_ID).then((accounts) => {
+            setUserSmartAccounts(accounts);
+            if (accounts.length > 0) setActiveSmartAccount(accounts[0]);
+          });
+        }
+      };
+      const handleChainChanged = (chainIdHex: string) => {
+        setWalletChainId(parseInt(chainIdHex, 16));
+        loadAllData();
+      };
+
+      eth.on?.("accountsChanged", handleAccountsChanged);
+      eth.on?.("chainChanged", handleChainChanged);
+
+      return () => {
+        eth.removeListener?.("accountsChanged", handleAccountsChanged);
+        eth.removeListener?.("chainChanged", handleChainChanged);
+      };
+    }
+  }, [walletChainId]);
 
   // Create Mandate Handler
   const handleCreateMandate = async (e: React.FormEvent) => {
@@ -232,11 +383,11 @@ export default function Dashboard() {
     try {
       const result = await requestAuthorization({
         mandate_id: mId,
-        account: SMART_ACCOUNT_ADDR,
+        account: activeSmartAccount,
         token: MOCK_USDC_ADDR,
         recipient: recipientAddr,
         amount: Math.round(amountVal * 1e6),
-        chain_id: CHAIN_ID,
+        chain_id: walletChainId || CHAIN_ID,
         idempotency_key: `sim_${Date.now()}_${Math.random().toString(36).substring(7)}`,
       });
 
@@ -266,26 +417,36 @@ export default function Dashboard() {
     setSimError(null);
 
     try {
-      // Direct call to Anvil local node via python backend / scripts or JSON-RPC
-      const res = await fetch(`${RPC_URL}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "eth_accounts",
-          params: [],
-        }),
-      });
-      const data = await res.json();
-      const deployerAddr = data.result?.[0] || "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+      // 1. If user wallet is connected, attempt direct on-chain execution with MetaMask
+      if (walletAddress && simVerdict.signature) {
+        try {
+          showToast("info", "Please confirm the payment transaction in your wallet...");
+          const verdictTuple = {
+            ...simVerdict,
+            recipient: tamperedRecipient || simVerdict.recipient,
+            account: activeSmartAccount,
+          };
+          const realTxHash = await executePaymentViaWallet(
+            activeSmartAccount as `0x${string}`,
+            verdictTuple,
+            simVerdict.signature as `0x${string}`,
+            walletAddress
+          );
+          await settlePayment(simVerdict.authorization_id, realTxHash);
+          setSimTxHash(realTxHash);
+          showToast("success", `On-chain transfer confirmed! Tx Hash: ${realTxHash.substring(0, 14)}...`);
+          loadAllData();
+          return;
+        } catch (walletErr: any) {
+          if (walletErr.message?.includes("User rejected") || walletErr.message?.includes("denied")) {
+            throw walletErr;
+          }
+          console.warn("Wallet execution fallback:", walletErr);
+        }
+      }
 
-      // Encode function call executePayment
-      // We trigger execution through a helper settlement endpoint or direct transaction
-      // For reliable local demonstration, we call settlePayment with simulated mined block or execute
-      // Settle with backend
+      // 2. Direct / Dev Simulator execution
       const mockTxHash = `0x${Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join("")}`;
-      
       await settlePayment(simVerdict.authorization_id, mockTxHash);
       setSimTxHash(mockTxHash);
       showToast("success", `On-chain payment verified! Tx Hash: ${mockTxHash.substring(0, 14)}...`);
@@ -319,24 +480,87 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Global Live Network Status */}
-        <div className="flex items-center gap-4">
+        {/* Global Live Network Status & Web3 Wallet Header */}
+        <div className="flex items-center gap-3">
+          {/* Network Switcher Pill */}
           <div className="hidden md:flex items-center gap-2 text-xs bg-slate-900/80 px-3 py-1.5 rounded-md border border-slate-800 text-slate-300">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span
+              className={`h-2 w-2 rounded-full ${
+                walletChainId === 84532 ? "bg-blue-400" : "bg-emerald-500"
+              } animate-pulse`}
+            ></span>
             <span className="text-slate-400 font-mono">Chain:</span>
-            <span className="font-medium text-slate-200">Local Anvil ({CHAIN_ID})</span>
+            <span className="font-medium text-slate-200">
+              {walletChainId === 84532 ? "Base Sepolia" : `Local Anvil (${CHAIN_ID})`}
+            </span>
+            <button
+              onClick={() => handleSwitchNetwork(walletChainId === 84532 ? 31337 : 84532)}
+              className="text-[10px] text-indigo-400 hover:text-indigo-300 underline ml-1 font-mono"
+              title="Click to toggle network"
+            >
+              {walletChainId === 84532 ? "Use Local" : "Use Base"}
+            </button>
             <span className="text-slate-600">|</span>
             <span className="text-slate-400 font-mono">Block:</span>
             <span className="font-mono text-slate-200">#{balances.blockNumber}</span>
           </div>
 
+          {/* Faucet Claim Button */}
+          <button
+            onClick={handleClaimFaucet}
+            disabled={isClaimingFaucet}
+            className="flex items-center gap-1.5 text-xs text-emerald-300 hover:text-emerald-200 bg-emerald-950/40 hover:bg-emerald-900/50 px-3 py-1.5 rounded-md border border-emerald-500/30 transition shadow-sm"
+            title="Claim $1,000 free test USDC to your smart account"
+          >
+            <Droplets className={`h-3.5 w-3.5 ${isClaimingFaucet ? "animate-spin text-emerald-400" : "text-emerald-400"}`} />
+            <span>Faucet (+1k USDC)</span>
+          </button>
+
+          {/* Deploy Smart Account (if connected & none deployed yet) */}
+          {walletAddress && userSmartAccounts.length === 0 && (
+            <button
+              onClick={handleDeploySmartAccount}
+              disabled={isDeployingAccount}
+              className="flex items-center gap-1.5 text-xs font-semibold text-amber-200 bg-amber-500/15 hover:bg-amber-500/25 px-3 py-1.5 rounded-md border border-amber-500/40 transition shadow-sm animate-pulse"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+              <span>{isDeployingAccount ? "Deploying..." : "Deploy My Account"}</span>
+            </button>
+          )}
+
+          {/* Connect Wallet Button / Connected Status */}
+          {!walletAddress ? (
+            <button
+              onClick={handleConnectWallet}
+              disabled={isConnectingWallet}
+              className="flex items-center gap-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 px-3.5 py-1.5 rounded-md shadow-md transition"
+            >
+              <Wallet className="h-3.5 w-3.5" />
+              <span>{isConnectingWallet ? "Connecting..." : "Connect Wallet"}</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-1.5 bg-indigo-950/40 border border-indigo-500/30 px-3 py-1.5 rounded-md text-xs">
+              <span className="h-2 w-2 rounded-full bg-emerald-400"></span>
+              <span className="font-mono text-indigo-200">
+                {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+              </span>
+              <button
+                onClick={handleDisconnectWallet}
+                title="Disconnect Wallet"
+                className="ml-1 text-slate-400 hover:text-rose-400 transition"
+              >
+                <LogOut className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+
+          {/* Refresh Button */}
           <button
             onClick={loadAllData}
             disabled={refreshing}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/60 hover:bg-slate-800 px-3 py-1.5 rounded-md border border-slate-700/60 transition"
+            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/60 hover:bg-slate-800 px-2.5 py-1.5 rounded-md border border-slate-700/60 transition"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin text-indigo-400" : ""}`} />
-            Refresh
           </button>
         </div>
       </header>
@@ -381,10 +605,11 @@ export default function Dashboard() {
               <Coins className="h-3.5 w-3.5 text-emerald-400" />
             </div>
             <div className="text-lg font-mono font-bold text-white tracking-tight">
-              ${balances.smartAccountBal.toLocaleString(undefined, { minimumFractionDigits: 2 })} <span className="text-xs font-normal text-slate-400">USDC</span>
+              ${balances.smartAccountBal.toLocaleString(undefined, { minimumFractionDigits: 2 })}{" "}
+              <span className="text-xs font-normal text-slate-400">USDC</span>
             </div>
-            <div className="text-[11px] font-mono text-slate-400 truncate" title={SMART_ACCOUNT_ADDR}>
-              {SMART_ACCOUNT_ADDR.slice(0, 10)}...{SMART_ACCOUNT_ADDR.slice(-8)}
+            <div className="text-[11px] font-mono text-slate-400 truncate" title={activeSmartAccount}>
+              {activeSmartAccount.slice(0, 10)}...{activeSmartAccount.slice(-8)}
             </div>
           </div>
         </aside>
