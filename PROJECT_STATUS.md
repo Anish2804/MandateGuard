@@ -93,3 +93,25 @@
   - [x] Verified complete end-to-end run from cold start on live local chain.
   - [x] Documented threat model, signed verdict spec, architecture, and API docs.
   - [x] Demo walkthrough and quickstart verified.
+
+- [x] **PRODUCTION-READY UPGRADES (COMPLETED)**
+  - [x] **Step 1: Smart Account Factory (`MandateGuardFactory.sol`)**:
+    - Multi-tenant account deployment with direct and deterministic CREATE2 support.
+    - Owner account indexing (`getAccountsByOwner`, `predictAccountAddress`).
+    - 8 / 8 Foundry unit tests passed (`MandateGuardFactory.t.sol`). Total contract tests: **24 passed, 0 failed, 256 fuzz runs**.
+    - Deployed Factory to local chain: `0x70e0bA845a1A0F2DA3359C97E0285013525FFC49`.
+  - [x] **Step 2: Multi-Tenant Database & Agent API Key Authentication**:
+    - `UserModel` and `ApiKeyModel` with secure SHA-256 key hashing (`mg_live_...`).
+    - API endpoints (`/api/v1/auth/api-keys`, delete revocation).
+    - Account-level isolation: Agents can only spend from their authorized smart account.
+    - Unit tests in `test_api_auth.py` passing 100%.
+  - [x] **Step 3: Enterprise Signer Abstraction (`BaseVerdictSigner`)**:
+    - Abstract interface supporting both `LocalPrivateKeySigner` and `AwsKmsVerdictSigner` (Hardware Security Module).
+    - Eliminates software private key exposure in production cloud environments.
+  - [x] **Step 4: AI Agent Developer SDK (`sdk/python`)**:
+    - Clean `MandateGuardClient` package supporting 3-line payment workflows for LangChain/CrewAI/AutoGPT bots.
+    - SDK end-to-end integration test passed in `test_sdk.py`. Total backend tests: **13 passed, 0 failed**.
+  - [x] **Step 5: Production Dashboard Upgrades**:
+    - Added dedicated **Agent API Keys** tab to the web UI.
+    - Human owners can provision, copy, inspect, and revoke agent credentials with 1 click.
+    - Next.js production build verified clean in 2.3s.
