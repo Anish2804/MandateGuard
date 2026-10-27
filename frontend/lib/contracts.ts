@@ -18,13 +18,13 @@ export const SUPPORTED_CHAINS = {
 export const DEFAULT_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID || 31337);
 
 export const FACTORY_ADDRESS = (process.env.NEXT_PUBLIC_FACTORY_ADDRESS ||
-  "0x70e0bA845a1A0F2DA3359C97E0285013525FFC49") as `0x${string}`;
+  "0xc1715490738Ec42fc975B704Cb1542edf46368C9") as `0x${string}`;
 
 export const MOCK_USDC_ADDRESS = (process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS ||
-  "0x5FbDB2315678afecb367f032d93F642f64180aa3") as `0x${string}`;
+  "0x9CA71737B76EE51d2366C53CC8CdF21DC5246097") as `0x${string}`;
 
 export const DEFAULT_SMART_ACCOUNT_ADDRESS = (process.env.NEXT_PUBLIC_SMART_ACCOUNT_ADDRESS ||
-  "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512") as `0x${string}`;
+  "0xB07e049cc3245e8a765bA9bfb537CF5D5fFd4D68") as `0x${string}`;
 
 // --- Minimal ABIs ---
 

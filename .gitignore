@@ -47,8 +47,9 @@ contracts/out/
 
 # Environment and Secrets
 .env
+.env.*
 .env.local
-.env.*.local
+.env.testnet
 *.pem
 *.key
 *.db
