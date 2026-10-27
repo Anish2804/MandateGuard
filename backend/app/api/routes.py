@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.signer import recover_signer_from_verdict
 from app.models.mandate import MandateModel
+from app.models.tenant import ApiKeyModel
 from app.repositories.mandate_repo import MandateRepository
 from app.repositories.request_repo import PaymentRequestRepository
 from app.repositories.audit_repo import AuditRepository
@@ -16,6 +17,9 @@ from app.services.authorization_service import AuthorizationService
 from app.schemas.mandate import MandateCreate, MandateResponse
 from app.schemas.request import PaymentAuthorizationRequest, PaymentSettlementRequest
 from app.schemas.verdict import PaymentVerdictResponse, VerdictVerifyRequest, VerdictVerifyResponse
+from app.schemas.tenant import ApiKeyCreateRequest, ApiKeyCreatedResponse, ApiKeySummaryResponse
+from app.core.auth import verify_agent_api_key
+from sqlalchemy import select
 
 router = APIRouter()
 
@@ -195,10 +199,73 @@ async def revoke_mandate(mandate_id: str, db: AsyncSession = Depends(get_db)):
         status="REVOKED",
     )
 
+# --- Agent Authentication & Provisioning Endpoints ---
+
+@router.post("/auth/api-keys", response_model=ApiKeyCreatedResponse, status_code=status.HTTP_201_CREATED, tags=["Agent Auth"])
+async def create_api_key(req: ApiKeyCreateRequest, db: AsyncSession = Depends(get_db)):
+    raw_key, api_key_obj = ApiKeyModel.generate(
+        user_id=req.user_id,
+        account_address=req.account_address,
+        name=req.name
+    )
+    db.add(api_key_obj)
+    await db.commit()
+    await db.refresh(api_key_obj)
+    return ApiKeyCreatedResponse(
+        id=api_key_obj.id,
+        name=api_key_obj.name,
+        key_prefix=api_key_obj.key_prefix,
+        api_key=raw_key,
+        account_address=api_key_obj.account_address,
+        is_active=api_key_obj.is_active,
+        created_at=api_key_obj.created_at
+    )
+
+@router.get("/auth/api-keys", response_model=List[ApiKeySummaryResponse], tags=["Agent Auth"])
+async def list_api_keys(account: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    query = select(ApiKeyModel).order_by(ApiKeyModel.created_at.desc())
+    if account:
+        query = query.where(ApiKeyModel.account_address == account.lower())
+    result = await db.execute(query)
+    keys = result.scalars().all()
+    return [
+        ApiKeySummaryResponse(
+            id=k.id,
+            name=k.name,
+            key_prefix=k.key_prefix,
+            account_address=k.account_address,
+            is_active=k.is_active,
+            created_at=k.created_at
+        )
+        for k in keys
+    ]
+
+@router.delete("/auth/api-keys/{key_id}", tags=["Agent Auth"])
+async def revoke_api_key(key_id: str, db: AsyncSession = Depends(get_db)):
+    query = select(ApiKeyModel).where(ApiKeyModel.id == key_id)
+    result = await db.execute(query)
+    key_obj = result.scalars().first()
+    if not key_obj:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API key not found")
+    key_obj.is_active = False
+    await db.commit()
+    return {"status": "success", "message": f"API key {key_id} revoked"}
+
 # --- Authorization Endpoints ---
 
 @router.post("/authorize", response_model=PaymentVerdictResponse, tags=["Authorization"])
-async def authorize_payment(req: PaymentAuthorizationRequest, db: AsyncSession = Depends(get_db)):
+async def authorize_payment(
+    req: PaymentAuthorizationRequest,
+    agent_auth: Optional[ApiKeyModel] = Depends(verify_agent_api_key),
+    db: AsyncSession = Depends(get_db)
+):
+    # Multi-tenant account isolation: if agent provided an API key, enforce that it can only spend from its assigned account!
+    if agent_auth:
+        if req.account.lower() != agent_auth.account_address.lower():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"API Key is locked to account {agent_auth.account_address}, but requested account was {req.account}"
+            )
     service = AuthorizationService(db)
     return await service.evaluate_and_authorize(req)
 

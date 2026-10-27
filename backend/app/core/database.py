@@ -26,5 +26,10 @@ async def get_db():
             await session.close()
 
 async def init_db():
+    # Import all models to ensure metadata registration
+    import app.models.mandate # noqa
+    import app.models.request # noqa
+    import app.models.audit   # noqa
+    import app.models.tenant  # noqa
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
