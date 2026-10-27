@@ -17,11 +17,13 @@ class Settings(BaseSettings):
         description="Async database connection string"
     )
     
-    # Signer Private Key (Local Anvil Account #1 by default)
-    # Address: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+    # Cryptographic Signer
+    SIGNER_TYPE: str = Field(default="local", description="'local' or 'kms'")
+    AWS_KMS_KEY_ID: str = Field(default="", description="AWS KMS Key ID or ARN for production HSM signing")
+    AWS_REGION: str = Field(default="us-east-1", description="AWS Region for KMS")
     AUTHORIZER_PRIVATE_KEY: str = Field(
         default="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
-        description="Private key for signing EIP-712 payment verdicts"
+        description="Private key for local dev signing"
     )
     
     # Contract addresses (populated after deployment)
