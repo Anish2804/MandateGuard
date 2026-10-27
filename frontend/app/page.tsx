@@ -33,12 +33,16 @@ import {
   fetchRequests,
   fetchAuditEvents,
   getOnChainBalances,
+  fetchApiKeys,
+  createApiKey,
+  revokeApiKey,
   rpcCall,
   Mandate,
   PaymentVerdict,
   PaymentRequestItem,
   AuditEventItem,
   SystemHealth,
+  ApiKeyItem,
   SMART_ACCOUNT_ADDR,
   MOCK_USDC_ADDR,
   CHAIN_ID,
@@ -47,7 +51,7 @@ import {
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<
-    "overview" | "mandates" | "simulator" | "verdict" | "audit" | "health"
+    "overview" | "mandates" | "agent-keys" | "simulator" | "verdict" | "audit" | "health"
   >("overview");
 
   // State
@@ -55,6 +59,7 @@ export default function Dashboard() {
   const [mandates, setMandates] = useState<Mandate[]>([]);
   const [requests, setRequests] = useState<PaymentRequestItem[]>([]);
   const [auditEvents, setAuditEvents] = useState<AuditEventItem[]>([]);
+  const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>([]);
   const [balances, setBalances] = useState({ smartAccountBal: 50000, merchantBal: 0, blockNumber: 1 });
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -62,6 +67,9 @@ export default function Dashboard() {
 
   // Modals
   const [showCreateMandate, setShowCreateMandate] = useState(false);
+  const [showCreateApiKey, setShowCreateApiKey] = useState(false);
+  const [apiKeyName, setApiKeyName] = useState("");
+  const [newlyCreatedKey, setNewlyCreatedKey] = useState<string | null>(null);
   const [createForm, setCreateForm] = useState({
     title: "",
     agent: "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
@@ -95,17 +103,19 @@ export default function Dashboard() {
   const loadAllData = async () => {
     setRefreshing(true);
     try {
-      const [h, m, reqs, aud] = await Promise.all([
+      const [h, m, reqs, aud, keys] = await Promise.all([
         fetchHealth().catch(() => null),
         fetchMandates().catch(() => []),
         fetchRequests().catch(() => []),
         fetchAuditEvents().catch(() => []),
+        fetchApiKeys().catch(() => []),
       ]);
 
       setHealth(h);
       setMandates(m);
       setRequests(reqs);
       setAuditEvents(aud);
+      setApiKeys(keys);
 
       if (m.length > 0 && !selectedMandateId) {
         setSelectedMandateId(m[0].id);
@@ -175,6 +185,36 @@ export default function Dashboard() {
       loadAllData();
     } catch (err: any) {
       showToast("error", err.message || "Failed to revoke mandate");
+    }
+  };
+
+  const handleCreateApiKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await createApiKey({
+        user_id: "user_primary_owner",
+        account_address: SMART_ACCOUNT_ADDR,
+        name: apiKeyName || "AI Autonomous Agent",
+      });
+      setNewlyCreatedKey(res.api_key);
+      showToast("success", `Generated API Key: ${res.key_prefix}...`);
+      setApiKeyName("");
+      const keys = await fetchApiKeys();
+      setApiKeys(keys);
+    } catch (err: any) {
+      showToast("error", err.message || "Failed to create API Key");
+    }
+  };
+
+  const handleRevokeApiKey = async (id: string) => {
+    if (!confirm("Are you sure you want to revoke this Agent API Key? The agent will lose access immediately.")) return;
+    try {
+      await revokeApiKey(id);
+      showToast("success", "API Key revoked successfully!");
+      const keys = await fetchApiKeys();
+      setApiKeys(keys);
+    } catch (err: any) {
+      showToast("error", err.message || "Failed to revoke API Key");
     }
   };
 
@@ -309,8 +349,9 @@ export default function Dashboard() {
             {[
               { id: "overview", label: "Overview", icon: Layers },
               { id: "mandates", label: "Mandates", icon: FileCheck2 },
+              { id: "agent-keys", label: "Agent API Keys", icon: KeyRound },
               { id: "simulator", label: "Payment Simulator", icon: Cpu },
-              { id: "verdict", label: "Verdict Inspector", icon: KeyRound },
+              { id: "verdict", label: "Verdict Inspector", icon: Lock },
               { id: "audit", label: "Audit Trail", icon: Activity },
               { id: "health", label: "System Health", icon: Server },
             ].map((tab) => {
@@ -611,6 +652,180 @@ export default function Dashboard() {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {/* AGENT API KEYS TAB */}
+          {activeTab === "agent-keys" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-2xl font-bold tracking-tight text-white">Autonomous Agent API Keys</h1>
+                  <p className="text-sm text-slate-400 mt-0.5">
+                    Provision scoped, revocable credentials for AI agents (LangChain, AutoGPT, CrewAI). Each key is cryptographically isolated to a smart account.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowCreateApiKey(true)}
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3.5 py-2 rounded-lg shadow-sm transition"
+                >
+                  <PlusCircle className="h-4 w-4" />
+                  Provision Agent Key
+                </button>
+              </div>
+
+              {/* Newly Created Key Alert Box */}
+              {newlyCreatedKey && (
+                <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-sm flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                      New Agent API Key Created! Copy it now (it will not be shown again):
+                    </span>
+                    <button
+                      onClick={() => setNewlyCreatedKey(null)}
+                      className="text-xs text-slate-400 hover:text-white"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 p-2.5 rounded-lg bg-slate-950 border border-emerald-500/30 text-emerald-300 font-mono text-xs select-all break-all">
+                      {newlyCreatedKey}
+                    </code>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(newlyCreatedKey);
+                        showToast("success", "API key copied to clipboard!");
+                      }}
+                      className="px-3 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg transition"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Keys Table */}
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden">
+                <table className="w-full text-left text-sm text-slate-300">
+                  <thead className="bg-slate-950/60 text-xs font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                    <tr>
+                      <th className="px-4 py-3">Agent / Label</th>
+                      <th className="px-4 py-3">Key Prefix</th>
+                      <th className="px-4 py-3">Isolated Smart Account</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Created</th>
+                      <th className="px-4 py-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/80">
+                    {apiKeys.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-8 text-center text-slate-500 text-sm">
+                          No agent keys provisioned yet. Click &quot;Provision Agent Key&quot; to authorize an autonomous AI agent.
+                        </td>
+                      </tr>
+                    ) : (
+                      apiKeys.map((k) => (
+                        <tr key={k.id} className="hover:bg-slate-800/20 transition">
+                          <td className="px-4 py-3.5 font-medium text-white">{k.name}</td>
+                          <td className="px-4 py-3.5 font-mono text-xs text-indigo-300">{k.key_prefix}...</td>
+                          <td className="px-4 py-3.5 font-mono text-xs text-slate-400">{k.account_address}</td>
+                          <td className="px-4 py-3.5">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${
+                                k.is_active
+                                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                  : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                              }`}
+                            >
+                              {k.is_active ? "ACTIVE" : "REVOKED"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3.5 text-xs text-slate-400">
+                            {new Date(k.created_at).toLocaleDateString()}
+                          </td>
+                          <td className="px-4 py-3.5 text-right">
+                            {k.is_active && (
+                              <button
+                                onClick={() => handleRevokeApiKey(k.id)}
+                                className="text-xs text-rose-400 hover:text-rose-300 font-medium px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition"
+                              >
+                                Revoke
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Create API Key Modal */}
+          {showCreateApiKey && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+              <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <KeyRound className="h-5 w-5 text-indigo-400" />
+                    Provision Agent API Key
+                  </h3>
+                  <button onClick={() => setShowCreateApiKey(false)} className="text-slate-400 hover:text-white">
+                    ✕
+                  </button>
+                </div>
+                <form onSubmit={async (e) => {
+                  await handleCreateApiKey(e);
+                  setShowCreateApiKey(false);
+                }} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">
+                      Agent Name / Identifier
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g., AutoGPT Server Agent"
+                      value={apiKeyName}
+                      onChange={(e) => setApiKeyName(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">
+                      Bound Smart Account
+                    </label>
+                    <input
+                      type="text"
+                      disabled
+                      value={SMART_ACCOUNT_ADDR}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-800 text-slate-400 text-xs font-mono"
+                    />
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      The agent can only request authorization for token spending from this account.
+                    </p>
+                  </div>
+                  <div className="flex justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowCreateApiKey(false)}
+                      className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition"
+                    >
+                      Generate Key
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           )}
