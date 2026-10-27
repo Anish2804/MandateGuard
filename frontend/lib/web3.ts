@@ -8,6 +8,7 @@ import {
   type Address,
   type Hash,
 } from "viem";
+import { baseSepolia } from "viem/chains";
 import {
   SUPPORTED_CHAINS,
   DEFAULT_CHAIN_ID,
@@ -134,9 +135,12 @@ export async function deploySmartAccountViaWallet(
     throw new Error("No Web3 wallet detected");
   }
 
+  await switchWalletNetwork(84532).catch(() => null);
+
   const ethereum = (window as any).ethereum;
   const walletClient = createWalletClient({
     account: ownerAddress,
+    chain: baseSepolia,
     transport: custom(ethereum),
   });
 
@@ -144,7 +148,6 @@ export async function deploySmartAccountViaWallet(
     address: FACTORY_ADDRESS,
     abi: FACTORY_ABI,
     functionName: "createAccount",
-    chain: null,
   });
 
   return { txHash };
@@ -160,9 +163,12 @@ export async function claimFaucetTokens(
     throw new Error("No Web3 wallet detected");
   }
 
+  await switchWalletNetwork(84532).catch(() => null);
+
   const ethereum = (window as any).ethereum;
   const walletClient = createWalletClient({
     account: userWallet,
+    chain: baseSepolia,
     transport: custom(ethereum),
   });
 
@@ -173,7 +179,6 @@ export async function claimFaucetTokens(
     abi: ERC20_ABI,
     functionName: "mint",
     args: [recipient, amountUnits],
-    chain: null,
   });
 
   return txHash;
@@ -228,13 +233,18 @@ export async function executePaymentViaWallet(
     throw new Error("No Web3 wallet detected");
   }
 
+  const chainId = verdictData.chainId ?? verdictData.chain_id ?? 84532;
+  await switchWalletNetwork(chainId).catch(() => null);
+
   const ethereum = (window as any).ethereum;
+  const targetChain = chainId === 84532 ? baseSepolia : undefined;
+
   const walletClient = createWalletClient({
     account: senderAddress,
+    chain: targetChain,
     transport: custom(ethereum),
   });
 
-  const chainId = verdictData.chainId ?? verdictData.chain_id ?? 31337;
   const mandateId = (verdictData.mandateId ?? verdictData.mandate_id ?? "0x0000000000000000000000000000000000000000000000000000000000000000") as `0x${string}`;
   const authorizationId = (verdictData.authorizationId ?? verdictData.authorization_id ?? "0x0000000000000000000000000000000000000000000000000000000000000000") as `0x${string}`;
   const mandateVersion = verdictData.mandateVersion ?? verdictData.mandate_version ?? 1;
@@ -257,7 +267,6 @@ export async function executePaymentViaWallet(
     abi: SMART_ACCOUNT_ABI,
     functionName: "executePayment",
     args: [verdictTuple, signatureHex],
-    chain: null,
   });
 
   return txHash;
