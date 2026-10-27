@@ -162,7 +162,7 @@ async def run_end_to_end():
         signed_reg_tx = w3.eth.account.sign_transaction(reg_tx, OWNER_PRIVATE_KEY)
         tx_hash = w3.eth.send_raw_transaction(signed_reg_tx.raw_transaction)
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
-        assert receipt.status == 1, "On-chain mandate registration reverted"
+        assert receipt["status"] == 1, "On-chain mandate registration reverted"
         print(f"[+] Mandate successfully registered on-chain: tx={tx_hash.hex()[:18]}...")
 
         # Register in backend
@@ -250,7 +250,7 @@ async def run_end_to_end():
         signed_exec_tx = w3.eth.account.sign_transaction(exec_tx, OWNER_PRIVATE_KEY)
         exec_hash = w3.eth.send_raw_transaction(signed_exec_tx.raw_transaction)
         exec_receipt = w3.eth.wait_for_transaction_receipt(exec_hash)
-        assert exec_receipt.status == 1, "Payment execution reverted on chain"
+        assert exec_receipt["status"] == 1, "Payment execution reverted on chain"
         print(f"[+] On-Chain Payment Executed! Tx Hash: {exec_hash.hex()}")
 
         # Verify Balances
