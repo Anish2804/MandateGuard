@@ -64,7 +64,18 @@ MandateGuard is an end-to-end security layer that prevents autonomous AI agents 
 - Python 3.11+
 - Foundry (`forge`, `anvil`) or Docker / Docker Compose
 
-### Option A: The 1-Command Automated Runner (Makefile)
+### Option A: Windows PowerShell (Native 1-Command Runner)
+If running directly in **Windows PowerShell**:
+```powershell
+# Run the entire test suite (Contracts + Backend + Live E2E)
+.\scripts\test.ps1
+
+# Or launch all services (Anvil + Backend + Frontend) in separate windows
+.\scripts\dev.ps1
+```
+
+### Option B: WSL Ubuntu / Linux (Makefile)
+If running inside **WSL** (`wsl -d Ubuntu-D`):
 ```bash
 # Run complete test suite (Contracts + Backend + E2E)
 make test
@@ -73,7 +84,7 @@ make test
 make dev
 ```
 
-### Option B: Docker Compose
+### Option C: Docker Compose
 ```bash
 docker-compose up --build
 ```
