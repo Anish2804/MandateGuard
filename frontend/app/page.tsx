@@ -40,6 +40,7 @@ import {
   claimFaucetTokens,
   registerMandateOnChain,
   revokeMandateOnChain,
+  switchWalletNetwork,
 } from "../lib/web3";
 import { SUPPORTED_CHAINS } from "../lib/contracts";
 import { useNetworkState } from "../lib/useNetworkState";
@@ -149,6 +150,72 @@ export default function SecurityConsole() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Real-time Web3 wallet event listeners (EIP-1193)
+  useEffect(() => {
+    if (typeof window === "undefined" || !(window as any).ethereum) return;
+    const ethereum = (window as any).ethereum;
+
+    const handleChainChanged = (chainIdHex: string) => {
+      const newChainId = parseInt(chainIdHex, 16);
+      setWalletChainId(newChainId);
+      const chainName =
+        SUPPORTED_CHAINS[newChainId as keyof typeof SUPPORTED_CHAINS]?.name ||
+        `Chain ID ${newChainId}`;
+      showToast("info", `Wallet switched to ${chainName}`);
+      loadData();
+    };
+
+    const handleAccountsChanged = (accounts: string[]) => {
+      if (!accounts || accounts.length === 0) {
+        setWalletAddress(null);
+        setWalletChainId(null);
+        setUserSmartAccounts([]);
+        showToast("info", "Wallet disconnected");
+      } else {
+        setWalletAddress(accounts[0] as `0x${string}`);
+        showToast("success", `Account changed: ${accounts[0].slice(0, 6)}...${accounts[0].slice(-4)}`);
+        loadData();
+      }
+    };
+
+    ethereum.on("chainChanged", handleChainChanged);
+    ethereum.on("accountsChanged", handleAccountsChanged);
+
+    return () => {
+      if (ethereum.removeListener) {
+        ethereum.removeListener("chainChanged", handleChainChanged);
+        ethereum.removeListener("accountsChanged", handleAccountsChanged);
+      }
+    };
+  }, [loadData, showToast]);
+
+  const [isSwitchingNetwork, setIsSwitchingNetwork] = useState(false);
+
+  // Switch network via wallet
+  const handleSwitchNetwork = async (targetChainId: number = 84532) => {
+    setIsSwitchingNetwork(true);
+    try {
+      showToast("info", "Requesting network switch in wallet...");
+      const updatedChainId = await switchWalletNetwork(targetChainId);
+      setWalletChainId(updatedChainId);
+      const targetName =
+        SUPPORTED_CHAINS[updatedChainId as keyof typeof SUPPORTED_CHAINS]?.name ||
+        "Base Sepolia";
+      showToast("success", `Successfully switched to ${targetName}!`);
+      await loadData();
+    } catch (err: any) {
+      if (err.code === 4001) {
+        showToast("warning", "Network switch was cancelled in your wallet.");
+      } else if (err.code === -32002) {
+        showToast("warning", "Open MetaMask: a network switch request is already waiting for your approval.");
+      } else {
+        showToast("error", err.message || "Failed to switch network");
+      }
+    } finally {
+      setIsSwitchingNetwork(false);
+    }
+  };
 
   // Connect Web3 Wallet
   const handleConnectWallet = async () => {
@@ -300,6 +367,8 @@ export default function SecurityConsole() {
         pendingRequests: pendingRequestsCount,
         activeAgents: activeAgentsCount,
       }}
+      onSwitchNetwork={handleSwitchNetwork}
+      isSwitchingNetwork={isSwitchingNetwork}
     >
       {/* Route 1: Overview */}
       {currentRoute === "overview" && (

@@ -66,8 +66,10 @@ export async function connectInjectedWallet(): Promise<{
 }
 
 // Switch wallet network to target chain (e.g. Base Sepolia or Local Anvil)
-export async function switchWalletNetwork(targetChainId: number): Promise<void> {
-  if (!hasInjectedProvider()) return;
+export async function switchWalletNetwork(targetChainId: number): Promise<number> {
+  if (!hasInjectedProvider()) {
+    throw new Error("No Web3 wallet extension detected in this browser.");
+  }
   const ethereum = (window as any).ethereum;
   const chainHex = `0x${targetChainId.toString(16)}`;
 
@@ -77,8 +79,18 @@ export async function switchWalletNetwork(targetChainId: number): Promise<void> 
       params: [{ chainId: chainHex }],
     });
   } catch (switchError: any) {
-    // Error 4902 means the chain has not been added to the wallet yet
-    if (switchError.code === 4902) {
+    // Check all standard and wallet-specific formats for unadded chain (4902)
+    const errCode = switchError?.code ?? switchError?.data?.originalError?.code ?? switchError?.error?.code;
+    const errMsg = String(switchError?.message || "").toLowerCase();
+    const isUnaddedChain =
+      errCode === 4902 ||
+      errCode === -32603 ||
+      errMsg.includes("unrecognized") ||
+      errMsg.includes("addethereumchain") ||
+      errMsg.includes("not found") ||
+      errMsg.includes("unknown chain");
+
+    if (isUnaddedChain) {
       const config = SUPPORTED_CHAINS[targetChainId as keyof typeof SUPPORTED_CHAINS];
       if (!config) throw switchError;
 
@@ -90,8 +102,8 @@ export async function switchWalletNetwork(targetChainId: number): Promise<void> 
             chainName: config.name,
             rpcUrls: [config.rpcUrl],
             nativeCurrency: {
-              name: config.currency,
-              symbol: config.currency,
+              name: "ETH",
+              symbol: "ETH",
               decimals: 18,
             },
             blockExplorerUrls: config.explorer ? [config.explorer] : [],
@@ -102,6 +114,12 @@ export async function switchWalletNetwork(targetChainId: number): Promise<void> 
       throw switchError;
     }
   }
+
+  // Fetch and return the verified new chain ID from the wallet
+  const updatedChainIdHex: string = await ethereum.request({
+    method: "eth_chainId",
+  });
+  return parseInt(updatedChainIdHex, 16);
 }
 
 // Get all smart accounts owned by a wallet address from MandateGuardFactory

@@ -75,6 +75,8 @@ export interface AppShellProps {
     pendingRequests?: number;
     activeAgents?: number;
   };
+  onSwitchNetwork?: (targetChainId: number) => Promise<void>;
+  isSwitchingNetwork?: boolean;
   onOpenCreateMandate?: () => void;
   onOpenProvisionAgent?: () => void;
   onOpenSimulator?: () => void;
@@ -105,6 +107,8 @@ export function AppShell({
   isDemoMode = false,
   onToggleDemoMode,
   counts = {},
+  onSwitchNetwork,
+  isSwitchingNetwork = false,
   onOpenCreateMandate,
   onOpenProvisionAgent,
   onOpenSimulator,
@@ -113,6 +117,23 @@ export function AppShell({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [walletDropdownOpen, setWalletDropdownOpen] = useState(false);
   const [networkDropdownOpen, setNetworkDropdownOpen] = useState(false);
+  const [localSwitching, setLocalSwitching] = useState(false);
+
+  const switchingActive = isSwitchingNetwork || localSwitching;
+
+  const handleSwitch = async (targetChainId: number = 84532) => {
+    setLocalSwitching(true);
+    try {
+      if (onSwitchNetwork) {
+        await onSwitchNetwork(targetChainId);
+      } else {
+        await switchWalletNetwork(targetChainId);
+      }
+    } finally {
+      setLocalSwitching(false);
+    }
+  };
+
   const [themeDropdownOpen, setThemeDropdownOpen] = useState(false);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [copiedAccount, setCopiedAccount] = useState(false);
@@ -401,17 +422,14 @@ export function AppShell({
                     </p>
                     <button
                       type="button"
+                      disabled={switchingActive}
                       onClick={async () => {
                         setNetworkDropdownOpen(false);
-                        try {
-                          await switchWalletNetwork(84532);
-                        } catch {
-                          onRouteChange("settings");
-                        }
+                        await handleSwitch(84532);
                       }}
-                      className="w-full py-1 px-2 text-center text-xs font-semibold rounded bg-[var(--warning)] text-white hover:opacity-90 transition-opacity"
+                      className="w-full py-1.5 px-2 text-center text-xs font-semibold rounded bg-[var(--warning)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
                     >
-                      Switch to Base Sepolia
+                      {switchingActive ? "Switching..." : "Switch to Base Sepolia"}
                     </button>
                   </div>
                 )}
@@ -652,9 +670,10 @@ export function AppShell({
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => switchWalletNetwork(84532)}
+            onClick={() => handleSwitch(84532)}
+            disabled={switchingActive}
           >
-            Switch to Base Sepolia
+            {switchingActive ? "Switching..." : "Switch to Base Sepolia"}
           </Button>
         </div>
       )}
