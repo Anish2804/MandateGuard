@@ -34,43 +34,70 @@ class MandateRepository:
     async def reserve_budget(self, mandate_id: str, amount: int) -> bool:
         """
         Atomically reserve budget for an approved authorization request.
-        Prevents concurrent requests from overspending the cumulative budget.
+        Uses a single atomic SQL UPDATE with conditional WHERE clause to eliminate TOCTOU race conditions.
         """
-        mandate = await self.get_by_id(mandate_id)
-        if not mandate or mandate.is_revoked:
-            return False
-
-        if mandate.remaining_budget < amount:
-            return False
-
-        mandate.reserved_amount += amount
+        stmt = (
+            update(MandateModel)
+            .where(
+                MandateModel.id == mandate_id,
+                MandateModel.is_revoked.is_(False),
+                (MandateModel.max_cumulative_amount - MandateModel.current_spent - MandateModel.reserved_amount) >= amount
+            )
+            .values(reserved_amount=MandateModel.reserved_amount + amount)
+        )
+        result = await self.db.execute(stmt)
         await self.db.commit()
-        await self.db.refresh(mandate)
-        return True
+        return result.rowcount > 0
 
     async def settle_budget(self, mandate_id: str, amount: int) -> bool:
         """
         Move funds from reserved to settled current_spent upon confirmed on-chain execution.
         """
-        mandate = await self.get_by_id(mandate_id)
-        if not mandate:
-            return False
-
-        mandate.reserved_amount = max(0, mandate.reserved_amount - amount)
-        mandate.current_spent += amount
+        stmt = (
+            update(MandateModel)
+            .where(
+                MandateModel.id == mandate_id,
+                MandateModel.reserved_amount >= amount
+            )
+            .values(
+                reserved_amount=MandateModel.reserved_amount - amount,
+                current_spent=MandateModel.current_spent + amount
+            )
+        )
+        result = await self.db.execute(stmt)
+        if result.rowcount == 0:
+            # Fallback if reserved_amount < amount: deduct whatever remains reserved
+            stmt_fallback = (
+                update(MandateModel)
+                .where(MandateModel.id == mandate_id)
+                .values(
+                    reserved_amount=0,
+                    current_spent=MandateModel.current_spent + amount
+                )
+            )
+            result = await self.db.execute(stmt_fallback)
         await self.db.commit()
-        await self.db.refresh(mandate)
-        return True
+        return result.rowcount > 0
 
     async def release_budget(self, mandate_id: str, amount: int) -> bool:
         """
         Release reserved funds back to available budget if execution expired or reverted.
         """
-        mandate = await self.get_by_id(mandate_id)
-        if not mandate:
-            return False
-
-        mandate.reserved_amount = max(0, mandate.reserved_amount - amount)
+        stmt = (
+            update(MandateModel)
+            .where(
+                MandateModel.id == mandate_id,
+                MandateModel.reserved_amount >= amount
+            )
+            .values(reserved_amount=MandateModel.reserved_amount - amount)
+        )
+        result = await self.db.execute(stmt)
+        if result.rowcount == 0:
+            stmt_fallback = (
+                update(MandateModel)
+                .where(MandateModel.id == mandate_id)
+                .values(reserved_amount=0)
+            )
+            result = await self.db.execute(stmt_fallback)
         await self.db.commit()
-        await self.db.refresh(mandate)
-        return True
+        return result.rowcount > 0

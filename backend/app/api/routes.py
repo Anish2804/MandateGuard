@@ -49,7 +49,7 @@ async def create_mandate(req: MandateCreate, db: AsyncSession = Depends(get_db))
     mandate_repo = MandateRepository(db)
     audit_repo = AuditRepository(db)
 
-    mandate_id = f"0x{uuid.uuid4().hex.rjust(64, '0')}"
+    mandate_id = req.id if req.id else f"0x{uuid.uuid4().hex.rjust(64, '0')}"
     current_time = int(time.time())
     start_time = req.start_time or current_time
 
@@ -358,13 +358,13 @@ async def verify_verdict(req: VerdictVerifyRequest):
 @router.post("/settle", tags=["Authorization"])
 async def settle_payment(req: PaymentSettlementRequest, db: AsyncSession = Depends(get_db)):
     service = AuthorizationService(db)
-    settled = await service.settle_payment(req.authorization_id, req.tx_hash)
+    settled, reason = await service.settle_payment(req.authorization_id, req.tx_hash)
     if not settled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unable to settle payment: authorization ID not found or already settled"
+            detail=f"Unable to settle payment: {reason}"
         )
-    return {"status": "SETTLED", "authorization_id": req.authorization_id, "tx_hash": req.tx_hash}
+    return {"status": "SETTLED", "authorization_id": req.authorization_id, "tx_hash": req.tx_hash, "message": reason}
 
 # --- Audit Events ---
 

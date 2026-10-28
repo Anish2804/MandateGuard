@@ -417,39 +417,29 @@ export default function Dashboard() {
     setSimError(null);
 
     try {
-      // 1. If user wallet is connected, attempt direct on-chain execution with MetaMask
-      if (walletAddress && simVerdict.signature) {
-        try {
-          showToast("info", "Please confirm the payment transaction in your wallet...");
-          const verdictTuple = {
-            ...simVerdict,
-            recipient: tamperedRecipient || simVerdict.recipient,
-            account: activeSmartAccount,
-          };
-          const realTxHash = await executePaymentViaWallet(
-            activeSmartAccount as `0x${string}`,
-            verdictTuple,
-            simVerdict.signature as `0x${string}`,
-            walletAddress
-          );
-          await settlePayment(simVerdict.authorization_id, realTxHash);
-          setSimTxHash(realTxHash);
-          showToast("success", `On-chain transfer confirmed! Tx Hash: ${realTxHash.substring(0, 14)}...`);
-          loadAllData();
-          return;
-        } catch (walletErr: any) {
-          if (walletErr.message?.includes("User rejected") || walletErr.message?.includes("denied")) {
-            throw walletErr;
-          }
-          console.warn("Wallet execution fallback:", walletErr);
-        }
+      // Enforce real on-chain execution via connected Web3 wallet
+      if (!walletAddress) {
+        throw new Error("Please connect your Web3 wallet (MetaMask, Phantom, Coinbase) to submit and execute on-chain payments.");
+      }
+      if (!simVerdict.signature) {
+        throw new Error("No cryptographic authorization signature available for this verdict.");
       }
 
-      // 2. Direct / Dev Simulator execution
-      const mockTxHash = `0x${Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join("")}`;
-      await settlePayment(simVerdict.authorization_id, mockTxHash);
-      setSimTxHash(mockTxHash);
-      showToast("success", `On-chain payment verified! Tx Hash: ${mockTxHash.substring(0, 14)}...`);
+      showToast("info", "Please confirm the payment transaction in your wallet...");
+      const verdictTuple = {
+        ...simVerdict,
+        recipient: tamperedRecipient || simVerdict.recipient,
+        account: activeSmartAccount,
+      };
+      const realTxHash = await executePaymentViaWallet(
+        activeSmartAccount as `0x${string}`,
+        verdictTuple,
+        simVerdict.signature as `0x${string}`,
+        walletAddress
+      );
+      await settlePayment(simVerdict.authorization_id, realTxHash);
+      setSimTxHash(realTxHash);
+      showToast("success", `On-chain transfer confirmed! Tx Hash: ${realTxHash.substring(0, 14)}...`);
       loadAllData();
     } catch (err: any) {
       setSimError(err.message || "On-chain execution failed");

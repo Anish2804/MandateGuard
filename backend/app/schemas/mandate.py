@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field, field_validator
 from web3 import Web3
 
 class MandateCreate(BaseModel):
+    id: Optional[str] = Field(None, description="Optional custom 32-byte hex mandate ID (e.g. registered on-chain)")
     title: str = Field(..., min_length=1, max_length=255, description="Human readable policy title")
     account: str = Field(..., description="Target guarded smart account address")
     agent: str = Field(..., description="Authorized agent address")

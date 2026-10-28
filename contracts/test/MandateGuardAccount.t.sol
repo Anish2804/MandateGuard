@@ -614,4 +614,36 @@ contract MandateGuardAccountTest is Test {
         assertEq(usdc.balanceOf(merchant), preMerchantBal + amount);
         assertTrue(account.usedAuthorizations(authId));
     }
+
+    // --- 17. Revert When Mandate Is Not Registered On-Chain ---
+
+    function test_RevertWhen_MandateNotRegistered() public {
+        bytes32 unregMandateId = keccak256("UNREGISTERED_MANDATE_ID");
+        bytes32 authId = keccak256("AUTH_UNREG");
+
+        (
+            MandateGuardAccount.PaymentVerdict memory verdict,
+            bytes memory signature
+        ) = _createAndSignVerdict(
+            1,
+            block.chainid,
+            address(account),
+            address(usdc),
+            merchant,
+            10_000_000,
+            unregMandateId,
+            authId,
+            block.timestamp + 1 hours,
+            1,
+            authorizerPrivateKey
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MandateGuardAccount.MandateNotRegistered.selector,
+                unregMandateId
+            )
+        );
+        account.executePayment(verdict, signature);
+    }
 }

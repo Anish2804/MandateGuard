@@ -154,4 +154,27 @@ export const SMART_ACCOUNT_ABI = [
     outputs: [{ name: "", type: "bool" }],
     stateMutability: "view",
   },
+  {
+    type: "function",
+    name: "registerMandate",
+    inputs: [
+      { name: "mandateId", type: "bytes32" },
+      { name: "agent", type: "address" },
+      { name: "token", type: "address" },
+      { name: "recipient", type: "address" },
+      { name: "maxAmountPerTx", type: "uint256" },
+      { name: "maxCumulativeAmount", type: "uint256" },
+      { name: "startTime", type: "uint256" },
+      { name: "expiry", type: "uint256" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "revokeMandate",
+    inputs: [{ name: "mandateId", type: "bytes32" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
 ] as const;

@@ -5,7 +5,7 @@ from web3 import Web3
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.signer import sign_payment_verdict, recover_signer_from_verdict
+from app.core.signer import sign_payment_verdict, recover_signer_from_verdict, format_bytes32
 from app.models.mandate import MandateModel
 from app.models.request import PaymentRequestModel
 from app.repositories.mandate_repo import MandateRepository
@@ -276,12 +276,64 @@ class AuthorizationService:
             status="DENIED",
         )
 
-    async def settle_payment(self, auth_id: str, tx_hash: str) -> bool:
-        """Settle a payment upon confirmed on-chain execution."""
-        req = await self.request_repo.get_by_authorization_id(auth_id)
-        if not req or req.status != "ALLOWED":
-            return False
+    async def settle_payment(self, auth_id: str, tx_hash: str) -> Tuple[bool, str]:
+        """
+        Settle a payment upon confirmed on-chain execution.
+        Verifies transaction hash format, receipt status, and PaymentExecuted event log.
+        """
+        # 1. Format validation
+        if not tx_hash or not isinstance(tx_hash, str) or not tx_hash.startswith("0x") or len(tx_hash) != 66:
+            return False, "Invalid transaction hash format (must be 0x followed by 64 hex characters)"
 
+        # 2. Check authorization record
+        req = await self.request_repo.get_by_authorization_id(auth_id)
+        if not req:
+            return False, f"Authorization ID {auth_id} not found"
+        if req.status == "SETTLED":
+            return False, f"Authorization ID {auth_id} is already settled (tx: {req.tx_hash})"
+        if req.status != "ALLOWED":
+            return False, f"Cannot settle authorization in status {req.status}"
+
+        # 3. On-chain receipt and event verification via EVM RPC
+        if settings.VERIFY_ON_CHAIN_SETTLEMENT:
+            try:
+                w3 = Web3(Web3.HTTPProvider(settings.RPC_URL))
+                if w3.is_connected():
+                    receipt = w3.eth.get_transaction_receipt(tx_hash)
+                    if receipt is None:
+                        return False, "Transaction receipt not found on chain (transaction is pending or dropped)"
+                    if receipt.get("status") != 1:
+                        return False, "Transaction reverted on chain (status = 0)"
+
+                    # Verify that the transaction called the smart account
+                    if receipt.get("to") and req.account:
+                        if receipt.get("to").lower() != req.account.lower():
+                            return False, f"Transaction recipient ({receipt.get('to')}) does not match smart account ({req.account})"
+
+                    # Event signature: PaymentExecuted(bytes32,bytes32,address,address,uint256)
+                    payment_executed_topic = Web3.keccak(text="PaymentExecuted(bytes32,bytes32,address,address,uint256)").hex().lower()
+                    auth_bytes_hex = format_bytes32(auth_id).hex().lower()
+
+                    event_found = False
+                    for log in receipt.get("logs", []):
+                        raw_topics = log.get("topics", [])
+                        topics = [t.hex().lower() if isinstance(t, (bytes, bytearray)) else str(t).lower() for t in raw_topics]
+                        if topics and topics[0] == payment_executed_topic:
+                            # Topic 2 is indexed authorizationId (padded to 32 bytes)
+                            if len(topics) > 2 and auth_bytes_hex in topics[2]:
+                                event_found = True
+                                break
+
+                    if not event_found:
+                        return False, f"Transaction logs do not contain PaymentExecuted event matching authorization {auth_id}"
+                else:
+                    if settings.ENVIRONMENT.lower() == "production":
+                        return False, "EVM RPC node connection unavailable in production environment"
+            except Exception as rpc_err:
+                if settings.ENVIRONMENT.lower() == "production":
+                    return False, f"RPC verification error: {str(rpc_err)}"
+
+        # 4. Mark settled in database and update spending accounting
         await self.request_repo.mark_settled(auth_id, tx_hash)
         await self.mandate_repo.settle_budget(req.mandate_id, req.amount)
 
@@ -295,4 +347,4 @@ class AuthorizationService:
                 "amount": req.amount,
             },
         )
-        return True
+        return True, "Payment settled successfully"

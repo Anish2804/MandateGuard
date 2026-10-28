@@ -165,8 +165,9 @@ async def run_end_to_end():
         assert receipt["status"] == 1, "On-chain mandate registration reverted"
         print(f"[+] Mandate successfully registered on-chain: tx={tx_hash.hex()[:18]}...")
 
-        # Register in backend
+        # Register in backend with the exact on-chain mandate_id_hex
         backend_mandate_res = await client.post("/api/v1/mandates", json={
+            "id": mandate_id_hex,
             "title": "Autonomous Cloud Host & Inference Mandate",
             "account": SMART_ACCOUNT_ADDR,
             "agent": AGENT_ADDR,
@@ -181,21 +182,8 @@ async def run_end_to_end():
         assert backend_mandate_res.status_code == 201
         registered_backend_mandate = backend_mandate_res.json()
         registered_backend_id = registered_backend_mandate["id"]
-        print(f"[+] Mandate registered in backend database: ID={registered_backend_id[:18]}...")
-
-        # Also register the exact byte-derived mandateId in backend so simulator can query by either
-        await client.post("/api/v1/mandates", json={
-            "title": "On-Chain Bound Mandate",
-            "account": SMART_ACCOUNT_ADDR,
-            "agent": AGENT_ADDR,
-            "token": MOCK_USDC_ADDR,
-            "recipient": MERCHANT_ADDR,
-            "max_amount_per_tx": max_per_tx,
-            "max_cumulative_amount": max_cumulative,
-            "chain_id": chain_id,
-            "start_time": start_time,
-            "expiry": expiry
-        })
+        assert registered_backend_id.lower() == mandate_id_hex.lower()
+        print(f"[+] Mandate registered in backend database bound to on-chain ID: {registered_backend_id[:18]}...")
 
         # -------------------------------------------------------------
         # STEP 2: Agent Requests Payment Authorization ($35 USDC)

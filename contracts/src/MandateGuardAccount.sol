@@ -120,6 +120,7 @@ contract MandateGuardAccount is ReentrancyGuard {
     error InvalidZeroAddress();
     error ZeroAmount();
     error MandateVersionMismatch(uint256 expected, uint256 actual);
+    error MandateNotRegistered(bytes32 mandateId);
 
     // --- Modifiers ---
 
@@ -234,33 +235,34 @@ contract MandateGuardAccount is ReentrancyGuard {
             revert AuthorizationAlreadyUsed(verdict.authorizationId);
         }
 
-        // 4. On-chain mandate verification (if mandate is registered on-chain)
+        // 4. On-chain mandate verification: mandate MUST be registered on-chain by the owner
         Mandate storage mandate = mandates[verdict.mandateId];
-        if (mandate.isRegistered) {
-            if (mandate.revoked) {
-                revert MandateRevokedError(verdict.mandateId);
-            }
-            if (block.timestamp < mandate.startTime || block.timestamp > mandate.expiry) {
-                revert MandateNotActive(verdict.mandateId, block.timestamp);
-            }
-            if (verdict.token != mandate.token) {
-                revert TokenMismatch(mandate.token, verdict.token);
-            }
-            if (mandate.recipient != address(0) && verdict.recipient != mandate.recipient) {
-                revert RecipientMismatch(mandate.recipient, verdict.recipient);
-            }
-            if (verdict.amount > mandate.maxAmountPerTx) {
-                revert AmountExceedsTxLimit(verdict.amount, mandate.maxAmountPerTx);
-            }
-            if (mandate.cumulativeSpent + verdict.amount > mandate.maxCumulativeAmount) {
-                revert AmountExceedsCumulativeLimit(
-                    verdict.amount,
-                    mandate.maxCumulativeAmount - mandate.cumulativeSpent
-                );
-            }
-            if (verdict.mandateVersion != mandate.version) {
-                revert MandateVersionMismatch(mandate.version, verdict.mandateVersion);
-            }
+        if (!mandate.isRegistered) {
+            revert MandateNotRegistered(verdict.mandateId);
+        }
+        if (mandate.revoked) {
+            revert MandateRevokedError(verdict.mandateId);
+        }
+        if (block.timestamp < mandate.startTime || block.timestamp > mandate.expiry) {
+            revert MandateNotActive(verdict.mandateId, block.timestamp);
+        }
+        if (verdict.token != mandate.token) {
+            revert TokenMismatch(mandate.token, verdict.token);
+        }
+        if (mandate.recipient != address(0) && verdict.recipient != mandate.recipient) {
+            revert RecipientMismatch(mandate.recipient, verdict.recipient);
+        }
+        if (verdict.amount > mandate.maxAmountPerTx) {
+            revert AmountExceedsTxLimit(verdict.amount, mandate.maxAmountPerTx);
+        }
+        if (mandate.cumulativeSpent + verdict.amount > mandate.maxCumulativeAmount) {
+            revert AmountExceedsCumulativeLimit(
+                verdict.amount,
+                mandate.maxCumulativeAmount - mandate.cumulativeSpent
+            );
+        }
+        if (verdict.mandateVersion != mandate.version) {
+            revert MandateVersionMismatch(mandate.version, verdict.mandateVersion);
         }
 
         // 5. Cryptographic signature verification
@@ -276,9 +278,7 @@ contract MandateGuardAccount is ReentrancyGuard {
 
         // 6. State updates & Event (Checks-Effects-Interactions)
         usedAuthorizations[verdict.authorizationId] = true;
-        if (mandate.isRegistered) {
-            mandate.cumulativeSpent += verdict.amount;
-        }
+        mandate.cumulativeSpent += verdict.amount;
 
         emit PaymentExecuted(
             verdict.mandateId,

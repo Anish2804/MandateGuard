@@ -15,6 +15,19 @@ import httpx
 async def setup_database():
     await init_db()
 
+import socket
+
+def is_server_listening(host="127.0.0.1", port=8000):
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+@pytest.mark.skipif(
+    not is_server_listening(),
+    reason="Live backend not running on http://127.0.0.1:8000 (run scripts/test_e2e.py for live integration)"
+)
 @pytest.mark.asyncio
 async def test_sdk_full_flow():
     # 1. Setup API key and mandate against live server
