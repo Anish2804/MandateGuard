@@ -131,6 +131,15 @@ export function AppShell({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  // Reset scroll on route change
+  useEffect(() => {
+    const mainEl = document.getElementById("main-content");
+    if (mainEl) {
+      mainEl.scrollTop = 0;
+    }
+  }, [currentRoute]);
+
+
   const navSections = [
     {
       title: "Monitor",
