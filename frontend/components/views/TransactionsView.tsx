@@ -43,14 +43,25 @@ export function TransactionsView({
     SUPPORTED_CHAINS[walletChainId as keyof typeof SUPPORTED_CHAINS] ||
     SUPPORTED_CHAINS[31337];
 
+  const formatTime = (val?: string | null) => {
+    if (!val) return "-";
+    try {
+      const d = new Date(val);
+      if (isNaN(d.getTime())) return "-";
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    } catch {
+      return "-";
+    }
+  };
+
   // Filter requests that have actual on-chain transaction hashes
-  const txRequests = requests.filter((r) => r.tx_hash);
+  const txRequests = (requests || []).filter((r) => Boolean(r?.tx_hash));
 
   const filteredTxs = txRequests.filter(
     (r) =>
-      r.tx_hash?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.recipient.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.mandate_id.toLowerCase().includes(searchTerm.toLowerCase())
+      (r.tx_hash || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (r.recipient || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (r.mandate_id || "").toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handleInspectReceipt = async (t: PaymentRequestItem) => {
@@ -118,7 +129,7 @@ export function TransactionsView({
       <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden shadow-sm">
         {filteredTxs.length === 0 ? (
           <EmptyState
-            icon={Receipt}
+            icon={<Receipt className="w-4 h-4" />}
             title={searchTerm ? "No matching transactions" : "No settled transactions"}
             description={
               searchTerm
@@ -161,7 +172,7 @@ export function TransactionsView({
                       )}
                     </td>
                     <td className="px-4 py-3 font-mono tabular-nums font-semibold text-[var(--text)]">
-                      ${t.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ${Number(t.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       <span className="text-[var(--text-muted)] font-normal text-[11px] ml-1">USDC</span>
                     </td>
                     <td className="px-4 py-3 font-mono">
@@ -182,7 +193,7 @@ export function TransactionsView({
                       <Badge variant="settled" size="sm">Confirmed</Badge>
                     </td>
                     <td className="px-4 py-3 text-[var(--text-muted)] whitespace-nowrap">
-                      {t.settled_at ? new Date(t.settled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "-"}
+                      {formatTime(t.settled_at)}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Button

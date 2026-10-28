@@ -41,28 +41,39 @@ export function AuditView({ auditEvents, onRefresh }: AuditViewProps) {
   const [selectedEvent, setSelectedEvent] = useState<AuditEventItem | null>(null);
   const [copiedJson, setCopiedJson] = useState(false);
 
-  const filteredEvents = auditEvents.filter((e) => {
+  const formatDateTime = (val?: string | null) => {
+    if (!val) return "-";
+    try {
+      const d = new Date(val);
+      if (isNaN(d.getTime())) return "-";
+      return d.toLocaleString([], { dateStyle: "short", timeStyle: "medium" });
+    } catch {
+      return "-";
+    }
+  };
+
+  const filteredEvents = (auditEvents || []).filter((e) => {
     const matchesSearch =
-      e.event_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (e.event_type || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       (e.mandate_id && e.mandate_id.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (e.request_id && e.request_id.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      e.id.toLowerCase().includes(searchTerm.toLowerCase());
+      (e.id || "").toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesType =
-      selectedType === "ALL" || e.event_type.toUpperCase().includes(selectedType);
+      selectedType === "ALL" || (e.event_type || "").toUpperCase().includes(selectedType);
 
     return matchesSearch && matchesType;
   });
 
-  const getEventBadge = (type: string) => {
-    const upper = type.toUpperCase();
+  const getEventBadge = (type?: string | null) => {
+    const upper = (type || "").toUpperCase();
     if (upper.includes("CREATED") || upper.includes("AUTHORIZED") || upper.includes("SETTLED")) {
-      return <Badge variant="success" size="sm">{type}</Badge>;
+      return <Badge variant="success" size="sm">{type || "EVENT"}</Badge>;
     }
     if (upper.includes("DENIED") || upper.includes("REVOKED")) {
-      return <Badge variant="danger" size="sm">{type}</Badge>;
+      return <Badge variant="danger" size="sm">{type || "EVENT"}</Badge>;
     }
-    return <Badge variant="neutral" size="sm">{type}</Badge>;
+    return <Badge variant="neutral" size="sm">{type || "EVENT"}</Badge>;
   };
 
   const handleExportJSON = () => {
@@ -180,7 +191,7 @@ export function AuditView({ auditEvents, onRefresh }: AuditViewProps) {
       <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden shadow-sm">
         {filteredEvents.length === 0 ? (
           <EmptyState
-            icon={History}
+            icon={<History className="w-4 h-4" />}
             title={searchTerm || selectedType !== "ALL" ? "No matching audit events" : "No audit events logged"}
             description={
               searchTerm || selectedType !== "ALL"
@@ -238,7 +249,7 @@ export function AuditView({ auditEvents, onRefresh }: AuditViewProps) {
                       )}
                     </td>
                     <td className="px-4 py-3 text-[var(--text-muted)] whitespace-nowrap">
-                      {evt.created_at ? new Date(evt.created_at).toLocaleString([], { dateStyle: "short", timeStyle: "medium" }) : "-"}
+                      {formatDateTime(evt.created_at)}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Button
