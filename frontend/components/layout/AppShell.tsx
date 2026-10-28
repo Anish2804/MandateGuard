@@ -254,6 +254,16 @@ export function AppShell({
     SUPPORTED_CHAINS[walletChainId as keyof typeof SUPPORTED_CHAINS] ||
     SUPPORTED_CHAINS[84532];
 
+  const getChainName = (chainId: number | null): string => {
+    if (!chainId) return "Unknown";
+    if (chainId === 84532) return "Base Sepolia";
+    if (chainId === 31337) return "Local Anvil";
+    if (chainId === 11155111) return "Sepolia";
+    if (chainId === 1) return "Ethereum";
+    if (chainId === 8453) return "Base";
+    return `Chain ${chainId}`;
+  };
+
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedAccount(true);
@@ -339,28 +349,74 @@ export function AppShell({
             <button
               type="button"
               onClick={() => setNetworkDropdownOpen(!networkDropdownOpen)}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-[var(--text)] bg-[var(--surface)] border border-[var(--border)] rounded hover:bg-[var(--surface-hover)] transition-colors"
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs rounded transition-colors ${
+                isMismatch
+                  ? "bg-[var(--warning-subtle)] text-[var(--warning-text)] border border-[var(--warning-border)] hover:bg-[var(--warning-subtle)]/80"
+                  : "text-[var(--text)] bg-[var(--surface)] border border-[var(--border)] hover:bg-[var(--surface-hover)]"
+              }`}
               aria-haspopup="true"
               aria-expanded={networkDropdownOpen}
+              title={
+                isMismatch
+                  ? `Wallet connected to ${getChainName(walletChainId)} (Chain ID ${walletChainId}). MandateGuard is configured for Base Sepolia (84532). Click to switch.`
+                  : `Connected to ${activeChain.name}`
+              }
             >
               <span
                 className={`w-1.5 h-1.5 rounded-full ${
-                  rpcHealthy ? "bg-[var(--success)]" : "bg-[var(--danger)]"
+                  isMismatch
+                    ? "bg-[var(--warning)] animate-pulse"
+                    : rpcHealthy
+                    ? "bg-[var(--success)]"
+                    : "bg-[var(--danger)]"
                 }`}
               />
-              <span className="font-medium text-xs">{activeChain.name}</span>
-              <Badge variant="neutral" size="sm" showIcon={false} className="hidden md:inline-flex text-[10px] py-0 px-1">
-                Testnet
+              <span className="font-medium text-xs">
+                {isMismatch ? getChainName(walletChainId) : activeChain.name}
+              </span>
+              <Badge
+                variant={isMismatch ? "warning" : "neutral"}
+                size="sm"
+                showIcon={false}
+                className="hidden md:inline-flex text-[10px] py-0 px-1"
+              >
+                {isMismatch ? "Mismatch" : "Testnet"}
               </Badge>
               <ChevronDown className="w-3 h-3 text-[var(--text-muted)]" />
             </button>
 
             {networkDropdownOpen && (
               <div
-                className="absolute right-0 mt-1 w-52 bg-[var(--surface)] border border-[var(--border)] rounded-md shadow-lg p-1 z-50 animate-in fade-in duration-100"
+                className="absolute right-0 mt-1 w-56 bg-[var(--surface)] border border-[var(--border)] rounded-md shadow-lg p-1.5 z-50 animate-in fade-in duration-100"
                 role="menu"
               >
-                <div className="px-2.5 py-1.5 text-[10px] uppercase font-semibold text-[var(--text-subtle)] tracking-wider">
+                {isMismatch && (
+                  <div className="p-2 mb-1.5 bg-[var(--warning-subtle)] border border-[var(--warning-border)] rounded text-xs space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-[var(--warning-text)] font-medium text-[11px]">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      <span>Wallet on unsupported chain</span>
+                    </div>
+                    <p className="text-[10px] text-[var(--text-muted)] leading-tight">
+                      Switch to Base Sepolia (84532) to query on-chain balances and submit transactions.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setNetworkDropdownOpen(false);
+                        try {
+                          await switchWalletNetwork(84532);
+                        } catch {
+                          onRouteChange("settings");
+                        }
+                      }}
+                      className="w-full py-1 px-2 text-center text-xs font-semibold rounded bg-[var(--warning)] text-white hover:opacity-90 transition-opacity"
+                    >
+                      Switch to Base Sepolia
+                    </button>
+                  </div>
+                )}
+
+                <div className="px-2 py-1 text-[10px] uppercase font-semibold text-[var(--text-subtle)] tracking-wider">
                   Supported Networks
                 </div>
                 {Object.values(SUPPORTED_CHAINS).map((chain) => (
@@ -376,7 +432,7 @@ export function AppShell({
                       }
                     }}
                     className={`w-full flex items-center justify-between px-2.5 py-1.5 text-xs rounded text-left transition-colors ${
-                      chain.id === activeChain.id
+                      chain.id === activeChain.id && !isMismatch
                         ? "bg-[var(--accent-subtle)] text-[var(--accent-text)] font-medium"
                         : "text-[var(--text)] hover:bg-[var(--surface-hover)]"
                     }`}
