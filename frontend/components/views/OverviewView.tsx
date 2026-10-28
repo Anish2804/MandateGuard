@@ -15,6 +15,10 @@ import {
   AlertTriangle,
   Play,
   Check,
+  Wallet,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../ui/Card";
 import { Button } from "../ui/Button";
@@ -29,6 +33,10 @@ export interface OverviewViewProps {
   auditEvents: AuditEventItem[];
   smartAccountBalance: number | null;
   rpcError: string | null;
+  walletAddress?: `0x${string}` | null;
+  isMismatch?: boolean;
+  onConnectWallet?: () => void;
+  agentCount?: number;
   onNavigate: (route: any) => void;
   onOpenCreateMandate: () => void;
   onOpenProvisionAgent?: () => void;
@@ -42,6 +50,10 @@ export function OverviewView({
   auditEvents,
   smartAccountBalance,
   rpcError,
+  walletAddress,
+  isMismatch = false,
+  onConnectWallet,
+  agentCount = 0,
   onNavigate,
   onOpenCreateMandate,
   onOpenProvisionAgent,
@@ -56,215 +68,326 @@ export function OverviewView({
   const allowedRequests = requests.filter((r) => r.verdict === 1);
   const deniedRequests = requests.filter((r) => r.verdict === 0);
 
-  // Getting started checklist evaluation
-  const step1Done = Boolean(health?.authorizer_signer);
+  // Finding B1: Ground-truth checklist derivation
+  const step1Done = agentCount > 0;
   const step2Done = mandates.length > 0;
   const step3Done = requests.length > 0;
-  const step4Done = requests.some((r) => r.status === "SETTLED");
-  const allStepsComplete = step1Done && step2Done && step3Done && step4Done;
+  const step4Done = requests.some((r) => r.status === "SETTLED" || r.verdict === 1);
+  
+  const completedStepsCount = [step1Done, step2Done, step3Done, step4Done].filter(Boolean).length;
+  const allStepsComplete = completedStepsCount === 4;
 
   const [dismissChecklist, setDismissChecklist] = useState(allStepsComplete);
+  const [activeStepIndex, setActiveStepIndex] = useState<number>(() => {
+    if (!step1Done) return 0;
+    if (!step2Done) return 1;
+    if (!step3Done) return 2;
+    if (!step4Done) return 3;
+    return 0;
+  });
 
   const spentPercent = totalAuthorized > 0 ? (totalSpent / totalAuthorized) * 100 : 0;
   const reservedPercent = totalAuthorized > 0 ? (totalReserved / totalAuthorized) * 100 : 0;
 
+  const checklistSteps = [
+    {
+      id: "agent",
+      title: "Provision AI agent",
+      desc: "Generate an API key bound to your smart account for cryptographic authorization requests.",
+      done: step1Done,
+      ctaLabel: "Provision agent",
+      action: () => {
+        if (onOpenProvisionAgent) onOpenProvisionAgent();
+        else onNavigate("agents");
+      },
+    },
+    {
+      id: "mandate",
+      title: "Define spending mandate",
+      desc: "Specify per-transaction limits, cumulative caps, and recipient whitelists.",
+      done: step2Done,
+      ctaLabel: "Create mandate",
+      action: onOpenCreateMandate,
+    },
+    {
+      id: "simulator",
+      title: "Simulate payment authorization",
+      desc: "Issue an agent payment request and verify the policy engine's signed verdict.",
+      done: step3Done,
+      ctaLabel: "Launch simulator",
+      action: () => {
+        onNavigate("requests");
+        if (onOpenSimulator) onOpenSimulator();
+      },
+    },
+    {
+      id: "verdict",
+      title: "Verify cryptographic verdict",
+      desc: "Inspect the EIP-712 ECDSA signature mathematically against the authorizer key.",
+      done: step4Done,
+      ctaLabel: "Verify verdict",
+      action: () => onNavigate("verdict"),
+    },
+  ];
+
   return (
-    <div className="space-y-5">
-      {/* RPC Offline Notice if applicable */}
+    <div className="space-y-6">
+      {/* RPC Notice */}
       {rpcError && (
         <div
           role="alert"
-          className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-md bg-[var(--warning-subtle)] border border-[var(--warning-border)] text-xs text-[var(--warning-text)]"
+          className="flex items-center gap-2.5 px-4 py-3 rounded-lg bg-[var(--warning-subtle)] border border-[var(--warning-border)] text-xs text-[var(--warning-text)]"
         >
           <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
           <span>
-            <strong>EVM RPC notice:</strong> On-chain balance query could not be completed ({rpcError}). Metric displays are limited to confirmed backend data.
+            <strong>EVM RPC notice:</strong> On-chain balance query could not be completed ({rpcError}). Telemetry reflects confirmed backend state.
           </span>
         </div>
       )}
 
-      {/* 4-Stat Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* Stat 1: Vault Balance */}
-        <div className="p-3.5 rounded-lg bg-[var(--surface)] border border-[var(--border)] shadow-xs">
-          <div className="flex items-center justify-between text-[var(--text-muted)] text-xs">
-            <span>Vault balance</span>
-            <Coins className="w-3.5 h-3.5" aria-hidden="true" />
+      {/* Hero Metric & Stats Grid (Finding D2) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* HERO Metric: Vault Balance (5 cols on desktop) */}
+        <div className="lg:col-span-5 p-5 rounded-lg bg-[var(--surface)] border border-[var(--border)] shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
+              <span className="font-medium text-[var(--text-subtle)]">Smart account vault reserve</span>
+              <Coins className="w-4 h-4 text-[var(--text-muted)]" aria-hidden="true" />
+            </div>
+
+            {/* Explicit Vault Balance States (Finding B2) */}
+            <div className="mt-3">
+              {!walletAddress ? (
+                <div className="space-y-2">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-semibold tracking-tight text-[var(--text-subtle)] tabular-nums">
+                      --
+                    </span>
+                    <span className="text-sm font-medium text-[var(--text-subtle)]">USDC</span>
+                  </div>
+                  <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+                    Connect wallet to view verified vault reserve on Base Sepolia.
+                  </p>
+                  {onConnectWallet && (
+                    <div className="pt-1">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={onConnectWallet}
+                        leftIcon={<Wallet className="w-3.5 h-3.5" />}
+                      >
+                        Connect wallet
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ) : isMismatch ? (
+                <div className="space-y-2">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-semibold tracking-tight text-[var(--warning-text)] tabular-nums">
+                      Mismatch
+                    </span>
+                  </div>
+                  <p className="text-xs text-[var(--warning-text)]">
+                    Wallet is connected to another network. Switch to Base Sepolia (84532) to view on-chain balance.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-semibold tracking-tight text-[var(--text)] tabular-nums">
+                      ${smartAccountBalance !== null ? smartAccountBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00"}
+                    </span>
+                    <span className="text-sm font-medium text-[var(--text-subtle)]">USDC</span>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1 text-[11px] text-[var(--text-muted)]">
+                    <span className="w-2 h-2 rounded-full bg-[var(--success)] inline-block" />
+                    <span>Verified on-chain · Base Sepolia (84532)</span>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="mt-1.5 flex items-baseline gap-1.5">
-            {smartAccountBalance !== null ? (
-              <span className="text-xl font-semibold font-mono tabular-nums text-[var(--text)] tracking-tight">
-                ${smartAccountBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-            ) : (
-              <span className="text-xs font-mono text-[var(--text-subtle)] italic">
-                Offline
-              </span>
-            )}
-            <span className="text-xs text-[var(--text-subtle)] font-medium">USDC</span>
-          </div>
-          <div className="mt-1 text-[11px] text-[var(--text-muted)]">
-            Verified on-chain reserve
+
+          <div className="pt-4 mt-4 border-t border-[var(--border)] flex items-center justify-between text-[11px] text-[var(--text-subtle)]">
+            <span>Isolation: ERC-4337 Smart Account</span>
+            <span className="tabular-nums">Last checked: Just now</span>
           </div>
         </div>
 
-        {/* Stat 2: Active Mandates */}
-        <div className="p-3.5 rounded-lg bg-[var(--surface)] border border-[var(--border)] shadow-xs">
-          <div className="flex items-center justify-between text-[var(--text-muted)] text-xs">
-            <span>Active mandates</span>
-            <FileCheck2 className="w-3.5 h-3.5 text-[var(--text-muted)]" aria-hidden="true" />
+        {/* 3 Secondary Stats (7 cols on desktop) */}
+        <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Stat 1: Active Mandates */}
+          <div className="p-4 rounded-lg bg-[var(--surface)] border border-[var(--border)] shadow-xs flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
+                <span className="font-medium text-[var(--text-subtle)]">Active mandates</span>
+                <FileCheck2 className="w-3.5 h-3.5" aria-hidden="true" />
+              </div>
+              <div className="mt-2 flex items-baseline gap-1.5">
+                <span className="text-2xl font-semibold text-[var(--text)] tabular-nums">
+                  {activeMandates.length}
+                </span>
+                <span className="text-xs text-[var(--text-muted)] tabular-nums">
+                  / {mandates.length} total
+                </span>
+              </div>
+            </div>
+            <div className="mt-3 text-[11px] text-[var(--text-muted)]">
+              {mandates.length - activeMandates.length} revoked or exhausted
+            </div>
           </div>
-          <div className="mt-1.5 flex items-baseline gap-1.5">
-            <span className="text-xl font-semibold font-mono tabular-nums text-[var(--text)] tracking-tight">
-              {activeMandates.length}
-            </span>
-            <span className="text-xs text-[var(--text-muted)] font-mono">
-              / {mandates.length} total
-            </span>
-          </div>
-          <div className="mt-1 text-[11px] text-[var(--text-muted)]">
-            {mandates.length - activeMandates.length} revoked or expired
-          </div>
-        </div>
 
-        {/* Stat 3: Spent / Authorized */}
-        <div className="p-3.5 rounded-lg bg-[var(--surface)] border border-[var(--border)] shadow-xs">
-          <div className="flex items-center justify-between text-[var(--text-muted)] text-xs">
-            <span>Spent / Authorized</span>
-            <ArrowRightLeft className="w-3.5 h-3.5 text-[var(--text-muted)]" aria-hidden="true" />
+          {/* Stat 2: Spent / Authorized */}
+          <div className="p-4 rounded-lg bg-[var(--surface)] border border-[var(--border)] shadow-xs flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
+                <span className="font-medium text-[var(--text-subtle)]">Spent / Authorized</span>
+                <ArrowRightLeft className="w-3.5 h-3.5" aria-hidden="true" />
+              </div>
+              <div className="mt-2 flex items-baseline gap-1.5">
+                <span className="text-2xl font-semibold text-[var(--text)] tabular-nums">
+                  ${totalSpent.toLocaleString()}
+                </span>
+                <span className="text-xs text-[var(--text-muted)] tabular-nums">
+                  / ${totalAuthorized.toLocaleString()}
+                </span>
+              </div>
+            </div>
+            <div className="mt-3 text-[11px] text-[var(--text-muted)]">
+              ${totalReserved.toLocaleString()} reserved in-flight
+            </div>
           </div>
-          <div className="mt-1.5 flex items-baseline gap-1.5">
-            <span className="text-xl font-semibold font-mono tabular-nums text-[var(--text)] tracking-tight">
-              ${totalSpent.toLocaleString()}
-            </span>
-            <span className="text-xs text-[var(--text-muted)] font-mono">
-              / ${totalAuthorized.toLocaleString()}
-            </span>
-          </div>
-          <div className="mt-1 text-[11px] text-[var(--text-muted)]">
-            ${totalReserved.toLocaleString()} reserved in-flight
-          </div>
-        </div>
 
-        {/* Stat 4: Verdicts Allow / Deny */}
-        <div className="p-3.5 rounded-lg bg-[var(--surface)] border border-[var(--border)] shadow-xs">
-          <div className="flex items-center justify-between text-[var(--text-muted)] text-xs">
-            <span>Verdicts</span>
-            <ShieldCheck className="w-3.5 h-3.5 text-[var(--text-muted)]" aria-hidden="true" />
-          </div>
-          <div className="mt-1.5 flex items-center gap-3">
-            <span className="text-xs font-mono font-medium text-[var(--success-text)] flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[var(--success)]" />
-              {allowedRequests.length} ALLOW
-            </span>
-            <span className="text-xs font-mono font-medium text-[var(--danger-text)] flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[var(--danger)]" />
-              {deniedRequests.length} DENY
-            </span>
-          </div>
-          <div className="mt-1 text-[11px] text-[var(--text-muted)]">
-            {requests.filter((r) => r.status === "SETTLED").length} settled on-chain
+          {/* Stat 3: Verdicts */}
+          <div className="p-4 rounded-lg bg-[var(--surface)] border border-[var(--border)] shadow-xs flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
+                <span className="font-medium text-[var(--text-subtle)]">Authorization verdicts</span>
+                <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />
+              </div>
+              <div className="mt-2 flex items-center gap-3">
+                <span className="text-xs font-semibold text-[var(--success-text)] flex items-center gap-1.5 tabular-nums">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--success)]" />
+                  {allowedRequests.length} ALLOW
+                </span>
+                <span className="text-xs font-semibold text-[var(--danger-text)] flex items-center gap-1.5 tabular-nums">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--danger)]" />
+                  {deniedRequests.length} DENY
+                </span>
+              </div>
+            </div>
+            <div className="mt-3 text-[11px] text-[var(--text-muted)]">
+              {requests.filter((r) => r.status === "SETTLED").length} settled on-chain
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Getting Started Checklist (Auto-hides when complete, or dismissible) */}
-      {!dismissChecklist && (
+      {/* Getting Started Vertical Stepper Card (Finding D4: auto-hide at 4/4) */}
+      {!dismissChecklist && !allStepsComplete && (
         <Card className="border-[var(--border)] bg-[var(--surface)]">
-          <CardHeader className="py-2.5">
+          <CardHeader className="py-3 px-5 border-b border-[var(--border)]">
             <div className="flex items-center justify-between w-full">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-3.5 h-3.5 text-[var(--accent)]" />
-                <CardTitle className="text-xs">Getting started with MandateGuard</CardTitle>
+              <div className="flex items-center gap-2.5">
+                <Sparkles className="w-4 h-4 text-[var(--accent)]" />
+                <div>
+                  <CardTitle className="text-xs font-semibold text-[var(--text)]">
+                    Setup & Onboarding Progress
+                  </CardTitle>
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    {completedStepsCount} of 4 steps completed
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => setDismissChecklist(true)}
-                className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+                className="text-xs text-[var(--text-muted)] hover:text-[var(--text)] transition-colors px-2 py-1 rounded"
               >
                 Dismiss
               </button>
             </div>
           </CardHeader>
-          <CardContent className="py-3">
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 text-xs">
-              <div
-                onClick={() => onNavigate("agents")}
-                className={`p-2.5 rounded border transition-colors cursor-pointer ${
-                  step1Done
-                    ? "bg-[var(--success-subtle)] border-[var(--success-border)] text-[var(--success-text)]"
-                    : "bg-[var(--surface-hover)] border-[var(--border)] text-[var(--text)]"
-                }`}
-              >
-                <div className="flex items-center gap-1.5 font-medium">
-                  {step1Done ? <Check className="w-3.5 h-3.5" /> : <span className="font-mono text-[10px]">1.</span>}
-                  <span>Provision agent</span>
-                </div>
-                <p className="text-[11px] text-[var(--text-muted)] mt-1">Bind agent API key to account</p>
-              </div>
+          <CardContent className="p-5 space-y-3">
+            <div className="space-y-2">
+              {checklistSteps.map((step, idx) => {
+                const isCurrent = activeStepIndex === idx;
+                return (
+                  <div
+                    key={step.id}
+                    className={`rounded-lg border transition-all ${
+                      isCurrent
+                        ? "border-[var(--border-strong)] bg-[var(--surface-hover)] p-3.5"
+                        : "border-[var(--border)] bg-[var(--surface)] p-3 cursor-pointer hover:bg-[var(--surface-hover)]"
+                    }`}
+                    onClick={() => setActiveStepIndex(idx)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-medium tabular-nums ${
+                            step.done
+                              ? "bg-[var(--success-subtle)] text-[var(--success-text)] border border-[var(--success-border)]"
+                              : isCurrent
+                              ? "bg-[var(--accent)] text-white"
+                              : "bg-[var(--surface-hover)] text-[var(--text-muted)] border border-[var(--border)]"
+                          }`}
+                        >
+                          {step.done ? <Check className="w-3 h-3" /> : idx + 1}
+                        </span>
+                        <span
+                          className={`text-xs font-medium ${
+                            step.done ? "text-[var(--text-muted)] line-through" : "text-[var(--text)]"
+                          }`}
+                        >
+                          {step.title}
+                        </span>
+                      </div>
 
-              <div
-                onClick={onOpenCreateMandate}
-                className={`p-2.5 rounded border transition-colors cursor-pointer ${
-                  step2Done
-                    ? "bg-[var(--success-subtle)] border-[var(--success-border)] text-[var(--success-text)]"
-                    : "bg-[var(--surface-hover)] border-[var(--border)] text-[var(--text)]"
-                }`}
-              >
-                <div className="flex items-center gap-1.5 font-medium">
-                  {step2Done ? <Check className="w-3.5 h-3.5" /> : <span className="font-mono text-[10px]">2.</span>}
-                  <span>Create mandate</span>
-                </div>
-                <p className="text-[11px] text-[var(--text-muted)] mt-1">Define spending bounds</p>
-              </div>
+                      {step.done ? (
+                        <Badge variant="success" size="sm">Completed</Badge>
+                      ) : isCurrent ? (
+                        <Badge variant="active" size="sm">Next step</Badge>
+                      ) : null}
+                    </div>
 
-              <div
-                onClick={() => {
-                  onNavigate("requests");
-                  if (onOpenSimulator) onOpenSimulator();
-                }}
-                className={`p-2.5 rounded border transition-colors cursor-pointer ${
-                  step3Done
-                    ? "bg-[var(--success-subtle)] border-[var(--success-border)] text-[var(--success-text)]"
-                    : "bg-[var(--surface-hover)] border-[var(--border)] text-[var(--text)]"
-                }`}
-              >
-                <div className="flex items-center gap-1.5 font-medium">
-                  {step3Done ? <Check className="w-3.5 h-3.5" /> : <span className="font-mono text-[10px]">3.</span>}
-                  <span>Simulate payment</span>
-                </div>
-                <p className="text-[11px] text-[var(--text-muted)] mt-1">Test policy evaluation</p>
-              </div>
-
-              <div
-                onClick={() => onNavigate("verdict")}
-                className={`p-2.5 rounded border transition-colors cursor-pointer ${
-                  step4Done
-                    ? "bg-[var(--success-subtle)] border-[var(--success-border)] text-[var(--success-text)]"
-                    : "bg-[var(--surface-hover)] border-[var(--border)] text-[var(--text)]"
-                }`}
-              >
-                <div className="flex items-center gap-1.5 font-medium">
-                  {step4Done ? <Check className="w-3.5 h-3.5" /> : <span className="font-mono text-[10px]">4.</span>}
-                  <span>Verify verdict</span>
-                </div>
-                <p className="text-[11px] text-[var(--text-muted)] mt-1">Inspect EIP-712 signature</p>
-              </div>
+                    {isCurrent && !step.done && (
+                      <div className="mt-2.5 pt-2.5 border-t border-[var(--border)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <p className="text-xs text-[var(--text-muted)] leading-relaxed max-w-xl">
+                          {step.desc}
+                        </p>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            step.action();
+                          }}
+                          rightIcon={<ArrowRight className="w-3.5 h-3.5" />}
+                        >
+                          {step.ctaLabel}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Middle Grid: Budget Utilization + System Status */}
+      {/* Middle Grid: Budget Utilization + Activity Overview */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Budget Utilization Card */}
+        {/* Budget Utilization Card (Finding D2: No card-in-card, clean dividers) */}
         <Card className="lg:col-span-2">
-          <CardHeader>
+          <CardHeader className="py-4 px-5 border-b border-[var(--border)]">
             <div className="flex items-center justify-between w-full">
               <div>
-                <CardTitle>Budget utilization</CardTitle>
-                <CardDescription>
-                  Cumulative spending across all active mandate policies.
+                <CardTitle className="text-sm font-semibold text-[var(--text)]">Budget utilization</CardTitle>
+                <CardDescription className="text-xs text-[var(--text-muted)]">
+                  Cumulative spending vs authorized buffer across active mandate policies.
                 </CardDescription>
               </div>
               <Button
@@ -276,19 +399,19 @@ export function OverviewView({
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="p-5 space-y-5">
             <div className="space-y-2">
-              <div className="flex justify-between text-xs font-mono tabular-nums">
+              <div className="flex justify-between text-xs tabular-nums font-sans">
                 <span className="text-[var(--text-muted)]">
                   Spent: <strong className="text-[var(--text)] font-semibold">${totalSpent.toFixed(2)}</strong>
                 </span>
                 <span className="text-[var(--text-muted)]">
-                  Remaining: <strong className="text-[var(--text)] font-semibold">${totalAvailable.toFixed(2)} USDC</strong>
+                  Remaining buffer: <strong className="text-[var(--text)] font-semibold">${totalAvailable.toFixed(2)} USDC</strong>
                 </span>
               </div>
 
               {/* Slim Stacked Progress Bar */}
-              <div className="w-full bg-[var(--surface-hover)] border border-[var(--border)] rounded-full h-2 overflow-hidden flex">
+              <div className="w-full bg-[var(--surface-hover)] border border-[var(--border)] rounded-full h-2.5 overflow-hidden flex">
                 <div
                   className="bg-[var(--accent)] h-full transition-all duration-300"
                   style={{ width: `${Math.min(spentPercent, 100)}%` }}
@@ -301,40 +424,40 @@ export function OverviewView({
                 />
               </div>
 
-              {/* Clean Legend */}
-              <div className="flex items-center gap-4 text-[11px] text-[var(--text-muted)] pt-0.5">
+              {/* Legend */}
+              <div className="flex items-center gap-4 text-xs text-[var(--text-muted)] pt-1">
                 <span className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-[var(--accent)] inline-block" />
-                  <span>Spent ({spentPercent.toFixed(1)}%)</span>
+                  <span>Settled ({spentPercent.toFixed(1)}%)</span>
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-[var(--warning)] inline-block" />
-                  <span>Reserved ({reservedPercent.toFixed(1)}%)</span>
+                  <span>In-flight reserved ({reservedPercent.toFixed(1)}%)</span>
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-[var(--border)] inline-block" />
-                  <span>Available buffer</span>
+                  <span>Available reserve</span>
                 </span>
               </div>
             </div>
 
-            {/* Quick Metrics Key-Value List */}
-            <div className="grid grid-cols-3 gap-2.5 pt-3 border-t border-[var(--border)] text-center text-xs">
-              <div className="p-2.5 rounded bg-[var(--surface-hover)] border border-[var(--border)]">
+            {/* 3-Column Row Separated by Dividers (NO card-in-card boxes) */}
+            <div className="grid grid-cols-3 divide-x divide-[var(--border)] pt-3 border-t border-[var(--border)]">
+              <div className="px-3 text-center">
                 <span className="text-[11px] text-[var(--text-muted)] block">Total authorized</span>
-                <span className="font-semibold font-mono tabular-nums text-[var(--text)] mt-0.5 block">
+                <span className="text-sm font-semibold tabular-nums text-[var(--text)] mt-1 block">
                   ${totalAuthorized.toLocaleString()}
                 </span>
               </div>
-              <div className="p-2.5 rounded bg-[var(--surface-hover)] border border-[var(--border)]">
+              <div className="px-3 text-center">
                 <span className="text-[11px] text-[var(--text-muted)] block">Settled volume</span>
-                <span className="font-semibold font-mono tabular-nums text-[var(--success-text)] mt-0.5 block">
+                <span className="text-sm font-semibold tabular-nums text-[var(--success-text)] mt-1 block">
                   ${totalSpent.toLocaleString()}
                 </span>
               </div>
-              <div className="p-2.5 rounded bg-[var(--surface-hover)] border border-[var(--border)]">
+              <div className="px-3 text-center">
                 <span className="text-[11px] text-[var(--text-muted)] block">Buffer available</span>
-                <span className="font-semibold font-mono tabular-nums text-[var(--text)] mt-0.5 block">
+                <span className="text-sm font-semibold tabular-nums text-[var(--text)] mt-1 block">
                   ${totalAvailable.toLocaleString()}
                 </span>
               </div>
@@ -342,134 +465,41 @@ export function OverviewView({
           </CardContent>
         </Card>
 
-        {/* System Status Key-Value List */}
+        {/* System & Verification Status Card */}
         <Card>
-          <CardHeader>
-            <CardTitle>System status</CardTitle>
-            <CardDescription>Core security service parameters.</CardDescription>
+          <CardHeader className="py-4 px-5 border-b border-[var(--border)]">
+            <CardTitle className="text-sm font-semibold text-[var(--text)]">Guard telemetry</CardTitle>
+            <CardDescription className="text-xs text-[var(--text-muted)]">
+              Live authorization engine state.
+            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3 text-xs">
-            <div className="flex items-center justify-between py-1 border-b border-[var(--border)]">
-              <span className="text-[var(--text-muted)]">Signing service</span>
-              <span className="font-mono text-[var(--text)] text-[11px]">
-                {health?.authorizer_signer ? (
-                  <AddressChip address={health.authorizer_signer} truncateLength={4} />
-                ) : (
-                  <span className="text-[var(--danger-text)]">Offline</span>
-                )}
-              </span>
+          <CardContent className="p-5 space-y-3.5 text-xs">
+            <div className="flex items-center justify-between pb-2.5 border-b border-[var(--border)]">
+              <span className="text-[var(--text-muted)]">Policy engine</span>
+              <Badge variant={health?.status === "healthy" ? "success" : "danger"} size="sm">
+                {health?.status === "healthy" ? "Healthy" : "Offline"}
+              </Badge>
             </div>
 
-            <div className="flex items-center justify-between py-1 border-b border-[var(--border)]">
-              <span className="text-[var(--text-muted)]">Database</span>
-              <span className="inline-flex items-center gap-1.5 font-medium text-[var(--success-text)]">
-                <span className="w-1.5 h-1.5 rounded-full bg-[var(--success)]" />
-                <span>Connected</span>
-              </span>
+            <div className="flex items-center justify-between pb-2.5 border-b border-[var(--border)]">
+              <span className="text-[var(--text-muted)]">Signing key mode</span>
+              <Badge variant="warning" size="sm">
+                Software key (dev)
+              </Badge>
             </div>
 
-            <div className="flex items-center justify-between py-1 border-b border-[var(--border)]">
-              <span className="text-[var(--text-muted)]">Chain ID</span>
-              <span className="font-mono font-medium text-[var(--text)]">
-                {health?.chain_id ?? "84532"}
-              </span>
+            <div className="flex items-center justify-between pb-2.5 border-b border-[var(--border)]">
+              <span className="text-[var(--text-muted)]">Active chain</span>
+              <span className="font-semibold text-[var(--text)]">Base Sepolia</span>
             </div>
 
-            <div className="flex items-center justify-between py-1 border-b border-[var(--border)]">
-              <span className="text-[var(--text-muted)]">Version</span>
-              <span className="font-mono text-[var(--text-muted)]">
-                {health?.version ?? "v0.1.0"}
-              </span>
-            </div>
-
-            <div className="pt-2">
-              <Button
-                variant="primary"
-                size="sm"
-                className="w-full justify-center"
-                onClick={onOpenCreateMandate}
-              >
-                Create new mandate
-              </Button>
+            <div className="flex items-center justify-between">
+              <span className="text-[var(--text-muted)]">Settlement asset</span>
+              <span className="font-semibold text-[var(--text)]">USDC (6 decimals)</span>
             </div>
           </CardContent>
         </Card>
       </div>
-
-      {/* Recent Activity Table */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between w-full">
-            <div>
-              <CardTitle>Recent activity</CardTitle>
-              <CardDescription>
-                Chronological stream of authorization decisions and security events.
-              </CardDescription>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onNavigate("audit")}
-              rightIcon={<ArrowRight className="w-3.5 h-3.5" />}
-            >
-              Full audit trail
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          {auditEvents.length === 0 ? (
-            <div className="text-center py-8 text-xs text-[var(--text-muted)]">
-              No recent events recorded.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs" aria-label="Recent activity table">
-                <thead className="bg-[var(--surface-hover)] border-b border-[var(--border)] text-[var(--text-muted)] font-medium">
-                  <tr>
-                    <th scope="col" className="px-4 py-2.5">Time</th>
-                    <th scope="col" className="px-4 py-2.5">Event</th>
-                    <th scope="col" className="px-4 py-2.5">Mandate reference</th>
-                    <th scope="col" className="px-4 py-2.5 text-right">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--border)] font-mono text-[11px]">
-                  {auditEvents.slice(0, 5).map((evt) => (
-                    <tr key={evt.id} className="hover:bg-[var(--surface-hover)] transition-colors">
-                      <td className="px-4 py-2.5 text-[var(--text-muted)] font-sans">
-                        {evt.created_at ? new Date(evt.created_at).toLocaleTimeString() : "-"}
-                      </td>
-                      <td className="px-4 py-2.5 font-medium text-[var(--text)]">
-                        {evt.event_type}
-                      </td>
-                      <td className="px-4 py-2.5 text-[var(--text-muted)]">
-                        {evt.mandate_id ? (
-                          <AddressChip address={evt.mandate_id} truncateLength={4} />
-                        ) : (
-                          "-"
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-sans">
-                        <Badge
-                          variant={
-                            evt.event_type.includes("CREATED") || evt.event_type.includes("AUTHORIZED")
-                              ? "success"
-                              : evt.event_type.includes("DENIED") || evt.event_type.includes("REVOKED")
-                              ? "danger"
-                              : "neutral"
-                          }
-                          size="sm"
-                        >
-                          {evt.event_type.includes("DENIED") ? "Denied" : "Recorded"}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }

@@ -95,28 +95,31 @@ export function AgentsView({
     <div className="space-y-4">
       {/* Search & Actions Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-sm">
+        <div className="relative flex-1 max-w-md min-w-[280px]">
           <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
           <input
             type="text"
             placeholder="Search agents by name or key prefix..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-[var(--surface)] border border-[var(--border)] rounded pl-8 pr-3 py-1.5 text-xs text-[var(--text)] placeholder-[var(--text-subtle)] focus:outline-none focus:border-[var(--border-strong)]"
+            className="w-full bg-[var(--surface)] border border-[var(--border)] rounded pl-8 pr-3 py-1.5 text-xs text-[var(--text)] placeholder-[var(--text-subtle)] focus:outline-none focus:border-[var(--accent)]"
           />
         </div>
 
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => {
-            setCreatedResult(null);
-            setShowDrawer(true);
-          }}
-          leftIcon={<PlusCircle className="w-3.5 h-3.5" />}
-        >
-          Provision agent
-        </Button>
+        {/* Finding A4: Only show header CTA if there are items */}
+        {filtered.length > 0 && (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setCreatedResult(null);
+              setShowDrawer(true);
+            }}
+            leftIcon={<PlusCircle className="w-3.5 h-3.5" />}
+          >
+            Provision agent
+          </Button>
+        )}
       </div>
 
       {/* Agents Table */}
@@ -141,16 +144,16 @@ export function AgentsView({
               }
             />
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-[600px]">
               <table className="w-full text-left text-xs" aria-label="Provisioned agents table">
-                <thead className="bg-[var(--surface-hover)] border-b border-[var(--border)] text-[var(--text-muted)] font-medium">
+                <thead className="bg-[var(--surface-raised)] border-b border-[var(--border)] text-[var(--text-muted)] text-xs font-medium sticky top-0 z-10">
                   <tr>
-                    <th scope="col" className="px-4 py-2.5">Agent identifier</th>
-                    <th scope="col" className="px-4 py-2.5">Key prefix</th>
-                    <th scope="col" className="px-4 py-2.5">Bound smart account</th>
-                    <th scope="col" className="px-4 py-2.5">Status</th>
-                    <th scope="col" className="px-4 py-2.5">Created</th>
-                    <th scope="col" className="px-4 py-2.5 text-right">Actions</th>
+                    <th scope="col" className="px-4 py-3">Agent identifier</th>
+                    <th scope="col" className="px-4 py-3">Key prefix</th>
+                    <th scope="col" className="px-4 py-3">Bound smart account</th>
+                    <th scope="col" className="px-4 py-3">Status</th>
+                    <th scope="col" className="px-4 py-3">Created</th>
+                    <th scope="col" className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border)]">

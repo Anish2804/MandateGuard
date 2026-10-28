@@ -25,6 +25,8 @@ import {
   Check,
   LogOut,
   Sparkles,
+  AlertTriangle,
+  Radio,
   ExternalLink,
 } from "lucide-react";
 import { Button } from "../ui/Button";
@@ -64,6 +66,10 @@ export interface AppShellProps {
   backendHealthy: boolean;
   rpcHealthy: boolean;
   smartAccountBalance: number | null;
+  latencyMs?: number | null;
+  isMismatch?: boolean;
+  isDemoMode?: boolean;
+  onToggleDemoMode?: (val: boolean) => void;
   counts?: {
     activeMandates?: number;
     pendingRequests?: number;
@@ -94,6 +100,10 @@ export function AppShell({
   backendHealthy,
   rpcHealthy,
   smartAccountBalance,
+  latencyMs = 84,
+  isMismatch = false,
+  isDemoMode = false,
+  onToggleDemoMode,
   counts = {},
   onOpenCreateMandate,
   onOpenProvisionAgent,
@@ -121,37 +131,29 @@ export function AppShell({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const navSections: {
-    title: string;
-    items: {
-      route: NavRoute;
-      label: string;
-      icon: React.ReactNode;
-      badge?: number;
-    }[];
-  }[] = [
+  const navSections = [
     {
       title: "Monitor",
       items: [
         {
-          route: "overview",
           label: "Overview",
+          route: "overview" as NavRoute,
           icon: <LayoutDashboard className="w-4 h-4 shrink-0" aria-hidden="true" />,
         },
         {
-          route: "requests",
           label: "Payment Requests",
+          route: "requests" as NavRoute,
           icon: <ArrowRightLeft className="w-4 h-4 shrink-0" aria-hidden="true" />,
           badge: counts.pendingRequests,
         },
         {
-          route: "transactions",
           label: "Transactions",
+          route: "transactions" as NavRoute,
           icon: <Receipt className="w-4 h-4 shrink-0" aria-hidden="true" />,
         },
         {
-          route: "audit",
           label: "Audit Trail",
+          route: "audit" as NavRoute,
           icon: <History className="w-4 h-4 shrink-0" aria-hidden="true" />,
         },
       ],
@@ -160,14 +162,14 @@ export function AppShell({
       title: "Configure",
       items: [
         {
-          route: "agents",
           label: "Agents",
+          route: "agents" as NavRoute,
           icon: <Bot className="w-4 h-4 shrink-0" aria-hidden="true" />,
           badge: counts.activeAgents,
         },
         {
-          route: "mandates",
           label: "Mandates & Policies",
+          route: "mandates" as NavRoute,
           icon: <FileCheck2 className="w-4 h-4 shrink-0" aria-hidden="true" />,
           badge: counts.activeMandates,
         },
@@ -177,13 +179,13 @@ export function AppShell({
       title: "Security",
       items: [
         {
-          route: "verdict",
           label: "Verdict Verification",
+          route: "verdict" as NavRoute,
           icon: <ShieldCheck className="w-4 h-4 shrink-0" aria-hidden="true" />,
         },
         {
-          route: "security",
           label: "Signers & Security",
+          route: "security" as NavRoute,
           icon: <Lock className="w-4 h-4 shrink-0" aria-hidden="true" />,
         },
       ],
@@ -192,8 +194,8 @@ export function AppShell({
       title: "System",
       items: [
         {
-          route: "settings",
           label: "Networks & Settings",
+          route: "settings" as NavRoute,
           icon: <Network className="w-4 h-4 shrink-0" aria-hidden="true" />,
         },
       ],
@@ -203,39 +205,39 @@ export function AppShell({
   const pageMeta: Record<NavRoute, { title: string; desc: string }> = {
     overview: {
       title: "Overview",
-      desc: "Spending utilization, active policies, and agent payment activity.",
-    },
-    requests: {
-      title: "Payment Requests",
-      desc: "Authorization decisions evaluated against active spending mandates.",
-    },
-    transactions: {
-      title: "Transactions",
-      desc: "Reconciled on-chain token transfers settled via guarded smart accounts.",
-    },
-    audit: {
-      title: "Audit Trail",
-      desc: "Immutable chronological log of mandate and authorization security events.",
+      desc: "Spending utilization, active policies, and autonomous agent payment activity.",
     },
     agents: {
-      title: "Agents",
-      desc: "Provisioned agent API keys locked to isolated smart accounts.",
+      title: "Agent Management",
+      desc: "Autonomous agents bound to your smart account with isolated API credentials.",
     },
     mandates: {
-      title: "Mandates & Policies",
-      desc: "Spending boundaries, transaction ceilings, and recipient whitelists.",
+      title: "Spending Mandates & Policies",
+      desc: "Deterministic spending bounds, per-transaction ceilings, and recipient whitelists.",
+    },
+    requests: {
+      title: "Payment Authorization Requests",
+      desc: "Real-time stream of incoming AI-agent payment requests evaluated against human policies.",
     },
     verdict: {
       title: "Verdict Verification",
-      desc: "Cryptographic EIP-712 structured data recovery and signer validation.",
+      desc: "Cryptographic EIP-712 structured data recovery, signature verification, and signer validation.",
+    },
+    transactions: {
+      title: "Settled Transactions",
+      desc: "On-chain transaction execution receipts verified against cryptographic mandate verdicts.",
+    },
+    audit: {
+      title: "Audit Trail",
+      desc: "Append-only chronological record of security verdicts, authorization nonces, and policy changes.",
     },
     security: {
       title: "Signers & Security",
-      desc: "Authorizer key configuration, governance parameters, and emergency controls.",
+      desc: "Authorizer signing infrastructure, governance parameters, and emergency controls.",
     },
     settings: {
       title: "Networks & Settings",
-      desc: "EVM network endpoints, RPC latency, and verified contract addresses.",
+      desc: "EVM network endpoints, RPC latency telemetry, and verified contract addresses.",
     },
   };
 
@@ -249,11 +251,19 @@ export function AppShell({
     setTimeout(() => setCopiedAccount(false), 1500);
   };
 
+  // Calibrated latency color: <300ms green, 300-800ms amber, >800ms red
+  const getLatencyColor = (ms: number | null) => {
+    if (ms === null) return "text-[var(--danger-text)]";
+    if (ms < 300) return "text-[var(--success-text)]";
+    if (ms <= 800) return "text-[var(--warning-text)]";
+    return "text-[var(--danger-text)]";
+  };
+
   return (
     <div className="min-h-screen bg-[var(--canvas)] text-[var(--text)] flex flex-col font-sans antialiased">
       {/* Top Bar */}
       <header className="sticky top-0 z-40 bg-[var(--surface)] border-b border-[var(--border)] h-12 px-4 lg:px-6 flex items-center justify-between gap-3">
-        {/* Left: Mobile Toggle + Breadcrumb */}
+        {/* Left: Product Mark ONLY on top-level pages (Finding A2) */}
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -264,19 +274,44 @@ export function AppShell({
             {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
           </button>
 
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-[var(--text)] tracking-tight">
-              MandateGuard
-            </span>
-            <span className="text-[var(--text-subtle)] text-xs">/</span>
-            <span className="text-xs text-[var(--text-muted)] font-medium">
-              {pageMeta[currentRoute].title}
-            </span>
-          </div>
+          <button
+            type="button"
+            onClick={() => onRouteChange("overview")}
+            className="flex items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] rounded"
+          >
+            <div className="w-6 h-6 rounded bg-[var(--accent)] text-white flex items-center justify-center font-bold text-xs shadow-xs">
+              <ShieldCheck className="w-3.5 h-3.5" />
+            </div>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-xs font-semibold text-[var(--text)] tracking-tight">
+                MandateGuard
+              </span>
+              <span className="text-[10px] font-medium px-1 py-0.2 rounded bg-[var(--surface-hover)] text-[var(--text-muted)] border border-[var(--border)]">
+                Console
+              </span>
+            </div>
+          </button>
         </div>
 
-        {/* Right: Actions, Search, Network, Account, Theme */}
+        {/* Right: Actions, Search, Network, Demo Mode, Account, Theme */}
         <div className="flex items-center gap-2">
+          {/* Demo Mode Indicator Pill */}
+          {isDemoMode && (
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[var(--warning-subtle)] border border-[var(--warning-border)] text-[11px] text-[var(--warning-text)] font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning)] animate-pulse" />
+              <span>Demo data active</span>
+              {onToggleDemoMode && (
+                <button
+                  type="button"
+                  onClick={() => onToggleDemoMode(false)}
+                  className="ml-1 text-[10px] underline hover:opacity-80"
+                >
+                  Exit
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Quick Search (Cmd+K) */}
           <button
             type="button"
@@ -347,7 +382,7 @@ export function AppShell({
             )}
           </div>
 
-          {/* Wallet & Account Menu */}
+          {/* Wallet Button: Secondary / Outline style (Finding D1) */}
           <div className="relative">
             {walletAddress ? (
               <button
@@ -363,7 +398,7 @@ export function AppShell({
               </button>
             ) : (
               <Button
-                variant="primary"
+                variant="secondary"
                 size="sm"
                 onClick={onConnectWallet}
                 leftIcon={<Wallet className="w-3.5 h-3.5" />}
@@ -378,36 +413,52 @@ export function AppShell({
                 role="menu"
               >
                 <div className="px-2 py-1.5 border-b border-[var(--border)]">
-                  <span className="text-[10px] uppercase font-semibold text-[var(--text-subtle)] block">
-                    Connected Wallet
+                  <span className="text-[10px] text-[var(--text-subtle)] uppercase tracking-wider block font-semibold">
+                    Signer Wallet
                   </span>
-                  <div className="flex items-center justify-between mt-0.5">
-                    <span className="font-mono text-[11px] text-[var(--text)] truncate">
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="font-mono text-xs font-semibold text-[var(--text)] truncate">
                       {walletAddress}
                     </span>
                     <button
                       type="button"
                       onClick={() => handleCopy(walletAddress)}
-                      className="p-1 text-[var(--text-muted)] hover:text-[var(--text)] rounded"
-                      title="Copy Address"
+                      className="text-[var(--text-muted)] hover:text-[var(--text)] p-0.5"
+                      title="Copy wallet address"
                     >
-                      {copiedAccount ? (
-                        <Check className="w-3 h-3 text-[var(--success-text)]" />
-                      ) : (
-                        <Copy className="w-3 h-3" />
-                      )}
+                      {copiedAccount ? <Check className="w-3.5 h-3.5 text-[var(--success-text)]" /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
                   </div>
                 </div>
 
-                <div className="px-2 py-2 border-b border-[var(--border)] space-y-1">
-                  <div className="flex justify-between items-center text-[11px]">
-                    <span className="text-[var(--text-muted)]">Active Smart Account:</span>
-                    <span className="font-mono text-[var(--text)]">
-                      {`${activeSmartAccount.slice(0, 6)}...${activeSmartAccount.slice(-4)}`}
+                {/* Smart Accounts Selector */}
+                <div className="px-2 py-2 border-b border-[var(--border)]">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] text-[var(--text-subtle)] uppercase tracking-wider font-semibold">
+                      Guarded Account
                     </span>
+                    <button
+                      type="button"
+                      onClick={onDeploySmartAccount}
+                      disabled={isDeployingAccount}
+                      className="text-[11px] text-[var(--accent-text)] hover:underline flex items-center gap-1 font-medium"
+                    >
+                      {isDeployingAccount ? (
+                        <span>Deploying...</span>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3 h-3" />
+                          <span>New Account</span>
+                        </>
+                      )}
+                    </button>
                   </div>
-                  <div className="flex justify-between items-center text-[11px]">
+
+                  <div className="mt-1 font-mono text-xs text-[var(--text)] bg-[var(--surface-hover)] p-1.5 rounded border border-[var(--border)] truncate">
+                    {activeSmartAccount}
+                  </div>
+
+                  <div className="flex justify-between items-center text-[11px] mt-2">
                     <span className="text-[var(--text-muted)]">Vault Balance:</span>
                     <span className="font-mono font-medium text-[var(--success-text)] tabular-nums">
                       {smartAccountBalance !== null
@@ -462,14 +513,14 @@ export function AppShell({
             )}
           </div>
 
-          {/* Theme Toggle (Light / Dark / System) */}
+          {/* Segmented Theme Control: Light / Dark / System (Finding F1) */}
           <div className="relative">
             <button
               type="button"
               onClick={() => setThemeDropdownOpen(!themeDropdownOpen)}
-              className="p-1.5 text-[var(--text-muted)] hover:text-[var(--text)] bg-[var(--surface)] border border-[var(--border)] rounded hover:bg-[var(--surface-hover)] transition-colors"
-              aria-label="Toggle color theme"
-              title={`Current theme: ${theme}`}
+              className="p-1.5 text-[var(--text-muted)] hover:text-[var(--text)] bg-[var(--surface)] border border-[var(--border)] rounded hover:bg-[var(--surface-hover)] transition-colors flex items-center gap-1"
+              aria-label="Select theme mode"
+              title={`Theme: ${theme}`}
             >
               {resolvedTheme === "dark" ? (
                 <Moon className="w-3.5 h-3.5" />
@@ -480,31 +531,33 @@ export function AppShell({
 
             {themeDropdownOpen && (
               <div
-                className="absolute right-0 mt-1 w-32 bg-[var(--surface)] border border-[var(--border)] rounded-md shadow-lg p-1 z-50 animate-in fade-in duration-100 text-xs"
+                className="absolute right-0 mt-1 w-36 bg-[var(--surface)] border border-[var(--border)] rounded-md shadow-lg p-1 z-50 animate-in fade-in duration-100 text-xs"
                 role="menu"
               >
-                {(
-                  [
-                    { id: "light", label: "Light", icon: <Sun className="w-3 h-3" /> },
-                    { id: "dark", label: "Dark", icon: <Moon className="w-3 h-3" /> },
-                    { id: "system", label: "System", icon: <Laptop className="w-3 h-3" /> },
-                  ] as const
-                ).map((t) => (
+                <div className="px-2 py-1 text-[10px] uppercase font-semibold text-[var(--text-subtle)] tracking-wider">
+                  Appearance
+                </div>
+                {(["light", "dark", "system"] as Theme[]).map((t) => (
                   <button
-                    key={t.id}
+                    key={t}
                     type="button"
                     onClick={() => {
-                      setTheme(t.id);
+                      setTheme(t);
                       setThemeDropdownOpen(false);
                     }}
-                    className={`w-full flex items-center gap-2 px-2 py-1 rounded text-xs transition-colors ${
-                      theme === t.id
-                        ? "bg-[var(--accent-subtle)] text-[var(--accent-text)] font-medium"
-                        : "text-[var(--text)] hover:bg-[var(--surface-hover)]"
+                    className={`w-full flex items-center justify-between px-2 py-1.5 rounded capitalize text-left transition-colors ${
+                      theme === t
+                        ? "bg-[var(--surface-hover)] text-[var(--text)] font-semibold"
+                        : "text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]"
                     }`}
                   >
-                    {t.icon}
-                    <span>{t.label}</span>
+                    <div className="flex items-center gap-2">
+                      {t === "light" && <Sun className="w-3.5 h-3.5 text-[var(--warning)]" />}
+                      {t === "dark" && <Moon className="w-3.5 h-3.5 text-[var(--accent-text)]" />}
+                      {t === "system" && <Laptop className="w-3.5 h-3.5 text-[var(--text-muted)]" />}
+                      <span>{t}</span>
+                    </div>
+                    {theme === t && <Check className="w-3 h-3 text-[var(--accent)]" />}
                   </button>
                 ))}
               </div>
@@ -513,9 +566,31 @@ export function AppShell({
         </div>
       </header>
 
+      {/* Network Mismatch Warning Banner (Finding B3) */}
+      {isMismatch && (
+        <div
+          role="alert"
+          className="bg-[var(--warning-subtle)] border-b border-[var(--warning-border)] px-4 py-2 flex items-center justify-between text-xs text-[var(--warning-text)]"
+        >
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>
+              <strong>Network mismatch:</strong> Connected wallet is on Chain ID {walletChainId}, but MandateGuard is configured for Base Sepolia (84532).
+            </span>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => switchWalletNetwork(84532)}
+          >
+            Switch to Base Sepolia
+          </Button>
+        </div>
+      )}
+
       {/* Main Body */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar (240px) */}
+      <div className="flex-1 flex">
+        {/* Desktop Sidebar: 2px accent indicator on active item (Finding D5) */}
         <aside
           className="hidden lg:flex w-60 flex-col justify-between border-r border-[var(--border)] bg-[var(--surface)] shrink-0 p-3"
           aria-label="Sidebar navigation"
@@ -523,7 +598,7 @@ export function AppShell({
           <div className="space-y-4">
             {navSections.map((sec) => (
               <div key={sec.title} className="space-y-1">
-                <span className="px-2.5 text-[10px] uppercase font-semibold text-[var(--text-subtle)] tracking-wider">
+                <span className="px-2.5 text-[11px] font-semibold text-[var(--text-subtle)] tracking-wider block">
                   {sec.title}
                 </span>
                 <nav className="space-y-0.5">
@@ -537,7 +612,7 @@ export function AppShell({
                         onClick={() => onRouteChange(item.route)}
                         className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded text-xs transition-colors select-none ${
                           isActive
-                            ? "bg-[var(--accent-subtle)] text-[var(--accent-text)] font-semibold"
+                            ? "relative border-l-2 border-[var(--accent)] bg-[var(--surface-hover)] text-[var(--text)] font-semibold pl-2"
                             : "text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]"
                         }`}
                         aria-current={isActive ? "page" : undefined}
@@ -548,10 +623,10 @@ export function AppShell({
                         </div>
                         {item.badge !== undefined && item.badge > 0 && (
                           <span
-                            className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                            className={`text-[10px] px-1.5 py-0.2 rounded-full font-sans tabular-nums ${
                               isActive
                                 ? "bg-[var(--accent)] text-white"
-                                : "bg-[var(--surface-hover)] text-[var(--text-muted)]"
+                                : "bg-[var(--surface-hover)] text-[var(--text-muted)] border border-[var(--border)]"
                             }`}
                           >
                             {item.badge}
@@ -565,24 +640,34 @@ export function AppShell({
             ))}
           </div>
 
-          {/* Compact Sidebar Footer: System Status Dots with Tooltips */}
-          <div className="pt-3 border-t border-[var(--border)] flex items-center justify-between px-2 text-[11px] text-[var(--text-muted)]">
-            <div className="flex items-center gap-1.5" title={backendHealthy ? "Backend API Operational" : "Backend API Offline"}>
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  backendHealthy ? "bg-[var(--success)]" : "bg-[var(--danger)]"
-                }`}
-              />
-              <span className="text-[10px] font-mono">API</span>
+          {/* Compact Sidebar Footer: Inter Typography (Finding D5) */}
+          <div className="pt-3 border-t border-[var(--border)] space-y-1.5 px-2 text-xs text-[var(--text-muted)]">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    backendHealthy ? "bg-[var(--success)]" : "bg-[var(--danger)]"
+                  }`}
+                />
+                <span className="font-normal">API</span>
+              </span>
+              <span className="text-[11px] font-medium text-[var(--text-subtle)]">
+                {backendHealthy ? "Connected" : "Offline"}
+              </span>
             </div>
 
-            <div className="flex items-center gap-1.5" title={rpcHealthy ? "EVM RPC Connected" : "EVM RPC Offline"}>
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  rpcHealthy ? "bg-[var(--success)]" : "bg-[var(--danger)]"
-                }`}
-              />
-              <span className="text-[10px] font-mono">RPC ({activeChain.id})</span>
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    rpcHealthy ? "bg-[var(--success)]" : "bg-[var(--danger)]"
+                  }`}
+                />
+                <span className="font-normal">RPC</span>
+              </span>
+              <span className={`text-[11px] font-medium tabular-nums ${getLatencyColor(latencyMs)}`}>
+                {activeChain.name} · {latencyMs ? `${latencyMs}ms` : "Offline"}
+              </span>
             </div>
           </div>
         </aside>
@@ -611,7 +696,7 @@ export function AppShell({
 
                 {navSections.map((sec) => (
                   <div key={sec.title} className="space-y-1">
-                    <span className="px-2 text-[10px] uppercase font-semibold text-[var(--text-subtle)] tracking-wider">
+                    <span className="px-2 text-[11px] font-semibold text-[var(--text-subtle)] tracking-wider block">
                       {sec.title}
                     </span>
                     <nav className="space-y-0.5">
@@ -625,7 +710,7 @@ export function AppShell({
                           }}
                           className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs ${
                             currentRoute === item.route
-                              ? "bg-[var(--accent-subtle)] text-[var(--accent-text)] font-semibold"
+                              ? "border-l-2 border-[var(--accent)] bg-[var(--surface-hover)] text-[var(--text)] font-semibold pl-2"
                               : "text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]"
                           }`}
                         >
@@ -634,7 +719,7 @@ export function AppShell({
                             <span>{item.label}</span>
                           </div>
                           {item.badge !== undefined && item.badge > 0 && (
-                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-[var(--surface-hover)] text-[var(--text-muted)]">
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-[var(--surface-hover)] text-[var(--text-muted)] tabular-nums">
                               {item.badge}
                             </span>
                           )}
@@ -648,16 +733,16 @@ export function AppShell({
           </div>
         )}
 
-        {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-6" id="main-content">
-          <div className="max-w-6xl mx-auto space-y-5">
-            {/* Standard Page Header */}
+        {/* Main Content Area (Finding D6: max-w-6xl, 1280px max, 32px padding) */}
+        <main className="flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-8" id="main-content">
+          <div className="max-w-6xl mx-auto space-y-6">
+            {/* Standard Single Page Header (Finding A1) */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-[var(--border)]">
               <div>
-                <h1 className="text-lg md:text-xl font-semibold text-[var(--text)] tracking-tight">
+                <h1 className="text-xl md:text-2xl font-semibold text-[var(--text)] tracking-tight">
                   {pageMeta[currentRoute].title}
                 </h1>
-                <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                <p className="text-xs text-[var(--text-muted)] mt-1">
                   {pageMeta[currentRoute].desc}
                 </p>
               </div>

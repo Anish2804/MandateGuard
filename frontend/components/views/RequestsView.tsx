@@ -76,6 +76,13 @@ export function RequestsView({
 
   const activeMandates = mandates.filter((m) => !m.is_revoked && m.remaining_budget > 0);
 
+  const counts = {
+    all: requests.length,
+    allow: requests.filter((r) => r.verdict === 1).length,
+    deny: requests.filter((r) => r.verdict === 0).length,
+    settled: requests.filter((r) => r.status === "SETTLED").length,
+  };
+
   const filteredRequests = requests.filter((r) => {
     const matchesSearch =
       r.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -186,53 +193,68 @@ export function RequestsView({
     <div className="space-y-4">
       {/* Search and Action Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex flex-1 items-center gap-2 max-w-md">
-          <div className="relative flex-1">
+        <div className="flex flex-1 items-center gap-2 max-w-xl">
+          {/* Finding D7: search input min 280px */}
+          <div className="relative flex-1 min-w-[280px]">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
             <input
               type="text"
-              placeholder="Search by request ID, mandate, or recipient..."
+              placeholder="Search requests by ID, mandate, or recipient..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-[var(--surface)] border border-[var(--border)] rounded pl-8 pr-3 py-1.5 text-xs text-[var(--text)] placeholder-[var(--text-subtle)] focus:outline-none focus:border-[var(--border-strong)]"
+              className="w-full bg-[var(--surface)] border border-[var(--border)] rounded pl-8 pr-3 py-1.5 text-xs text-[var(--text)] placeholder-[var(--text-subtle)] focus:outline-none focus:border-[var(--accent)]"
             />
           </div>
 
-          <div className="flex items-center gap-1 bg-[var(--surface)] border border-[var(--border)] rounded p-0.5 text-xs">
-            {(["all", "allow", "deny", "settled"] as const).map((filter) => (
+          {/* Finding D7: segmented control height 32px with counts */}
+          <div className="flex items-center gap-1 bg-[var(--surface)] border border-[var(--border)] rounded p-0.5 text-xs h-8">
+            {(
+              [
+                { id: "all", label: "All", count: counts.all },
+                { id: "allow", label: "Allow", count: counts.allow },
+                { id: "deny", label: "Deny", count: counts.deny },
+                { id: "settled", label: "Settled", count: counts.settled },
+              ] as const
+            ).map((filter) => (
               <button
-                key={filter}
+                key={filter.id}
                 type="button"
-                onClick={() => setStatusFilter(filter)}
-                className={`px-2 py-0.5 rounded capitalize text-[11px] font-medium transition-colors ${
-                  statusFilter === filter
-                    ? "bg-[var(--surface-hover)] text-[var(--text)] shadow-xs"
+                onClick={() => setStatusFilter(filter.id)}
+                className={`px-2.5 h-full rounded capitalize text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                  statusFilter === filter.id
+                    ? "bg-[var(--surface-hover)] text-[var(--text)] font-semibold shadow-xs"
                     : "text-[var(--text-muted)] hover:text-[var(--text)]"
                 }`}
               >
-                {filter}
+                <span>{filter.label}</span>
+                <span className="text-[10px] px-1 py-0.2 rounded bg-[var(--surface-raised)] text-[var(--text-muted)] tabular-nums">
+                  {filter.count}
+                </span>
               </button>
             ))}
           </div>
         </div>
 
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => {
-            setSimVerdict(null);
-            setSimError(null);
-            setExecutionTxHash(null);
-            setSettledSuccess(false);
-            if (activeMandates.length > 0 && !selectedMandateId) {
-              setSelectedMandateId(activeMandates[0].id);
-            }
-            setShowSimulator(true);
-          }}
-          leftIcon={<Play className="w-3.5 h-3.5" />}
-        >
-          Simulate payment
-        </Button>
+        {/* Finding A4: Only show header CTA if there are items */}
+        {filteredRequests.length > 0 && (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setSimVerdict(null);
+              setSimError(null);
+              setExecutionTxHash(null);
+              setSettledSuccess(false);
+              if (activeMandates.length > 0 && !selectedMandateId) {
+                setSelectedMandateId(activeMandates[0].id);
+              }
+              setShowSimulator(true);
+            }}
+            leftIcon={<Play className="w-3.5 h-3.5" />}
+          >
+            Simulate payment
+          </Button>
+        )}
       </div>
 
       {/* Requests Data Table */}
@@ -254,18 +276,18 @@ export function RequestsView({
               }
             />
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-[600px]">
               <table className="w-full text-left text-xs" aria-label="Payment requests history table">
-                <thead className="bg-[var(--surface-hover)] border-b border-[var(--border)] text-[var(--text-muted)] font-medium">
+                <thead className="bg-[var(--surface-raised)] border-b border-[var(--border)] text-[var(--text-muted)] text-xs font-medium sticky top-0 z-10">
                   <tr>
-                    <th scope="col" className="w-8 px-3 py-2.5"></th>
-                    <th scope="col" className="px-3 py-2.5">Request ID</th>
-                    <th scope="col" className="px-3 py-2.5">Mandate</th>
-                    <th scope="col" className="px-3 py-2.5">Amount</th>
-                    <th scope="col" className="px-3 py-2.5">Recipient</th>
-                    <th scope="col" className="px-3 py-2.5">Verdict</th>
-                    <th scope="col" className="px-3 py-2.5">Lifecycle state</th>
-                    <th scope="col" className="px-3 py-2.5 text-right">Time</th>
+                    <th scope="col" className="w-8 px-3 py-3"></th>
+                    <th scope="col" className="px-3 py-3">Request ID</th>
+                    <th scope="col" className="px-3 py-3">Mandate</th>
+                    <th scope="col" className="px-3 py-3">Amount</th>
+                    <th scope="col" className="px-3 py-3">Recipient</th>
+                    <th scope="col" className="px-3 py-3">Verdict</th>
+                    <th scope="col" className="px-3 py-3">Lifecycle state</th>
+                    <th scope="col" className="px-3 py-3 text-right">Time</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border)] font-mono text-[11px]">

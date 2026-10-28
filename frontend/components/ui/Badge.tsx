@@ -23,6 +23,7 @@ export interface BadgeProps {
   size?: "sm" | "md";
   showIcon?: boolean;
   className?: string;
+  title?: string;
 }
 
 export function Badge({
@@ -31,6 +32,7 @@ export function Badge({
   size = "sm",
   showIcon = true,
   className = "",
+  title,
 }: BadgeProps) {
   const sizeStyles = {
     sm: "text-[11px] h-5 px-1.5 gap-1 font-medium",
@@ -79,6 +81,7 @@ export function Badge({
 
   return (
     <span
+      title={title}
       className={`inline-flex items-center rounded select-none tracking-tight ${sizeStyles} ${styles} ${className}`}
     >
       {showIcon && icon}

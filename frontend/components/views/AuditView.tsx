@@ -13,6 +13,7 @@ import {
   FileText,
   Copy,
   Check,
+  Layers,
 } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
@@ -26,19 +27,11 @@ export interface AuditViewProps {
   onRefresh: () => void;
 }
 
-const EVENT_TYPE_OPTIONS = [
-  { label: "All events", value: "ALL" },
-  { label: "Mandate created", value: "MANDATE_CREATED" },
-  { label: "Payment authorized", value: "PAYMENT_AUTHORIZED" },
-  { label: "Payment denied", value: "PAYMENT_DENIED" },
-  { label: "Payment settled", value: "PAYMENT_SETTLED" },
-  { label: "Mandate revoked", value: "MANDATE_REVOKED" },
-];
-
 export function AuditView({ auditEvents, onRefresh }: AuditViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState<string>("ALL");
   const [selectedEvent, setSelectedEvent] = useState<AuditEventItem | null>(null);
+  const [activeTab, setActiveTab] = useState<"overview" | "details" | "json">("overview");
   const [copiedJson, setCopiedJson] = useState(false);
 
   const formatDateTime = (val?: string | null) => {
@@ -51,6 +44,22 @@ export function AuditView({ auditEvents, onRefresh }: AuditViewProps) {
       return "-";
     }
   };
+
+  const countsByType = {
+    ALL: (auditEvents || []).length,
+    MANDATE_CREATED: (auditEvents || []).filter((e) => (e.event_type || "").includes("CREATED")).length,
+    PAYMENT_AUTHORIZED: (auditEvents || []).filter((e) => (e.event_type || "").includes("AUTHORIZED")).length,
+    PAYMENT_DENIED: (auditEvents || []).filter((e) => (e.event_type || "").includes("DENIED")).length,
+    PAYMENT_SETTLED: (auditEvents || []).filter((e) => (e.event_type || "").includes("SETTLED")).length,
+  };
+
+  const EVENT_TYPE_OPTIONS = [
+    { label: "All", value: "ALL", count: countsByType.ALL },
+    { label: "Created", value: "MANDATE_CREATED", count: countsByType.MANDATE_CREATED },
+    { label: "Authorized", value: "PAYMENT_AUTHORIZED", count: countsByType.PAYMENT_AUTHORIZED },
+    { label: "Denied", value: "PAYMENT_DENIED", count: countsByType.PAYMENT_DENIED },
+    { label: "Settled", value: "PAYMENT_SETTLED", count: countsByType.PAYMENT_SETTLED },
+  ];
 
   const filteredEvents = (auditEvents || []).filter((e) => {
     const matchesSearch =
@@ -112,49 +121,11 @@ export function AuditView({ auditEvents, onRefresh }: AuditViewProps) {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[var(--border)]">
-        <div>
-          <h1 className="text-xl font-semibold text-[var(--text)] tracking-tight">Audit Trail</h1>
-          <p className="text-xs text-[var(--text-muted)] mt-1">
-            Immutable, cryptographically logged compliance ledger for policy evaluations and payments.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[var(--surface-raised)] border border-[var(--border)] text-xs text-[var(--text-muted)]">
-            <ShieldCheck className="w-3.5 h-3.5 text-[var(--success-text)]" />
-            <span>Immutable ledger</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleExportCSV}
-              disabled={filteredEvents.length === 0}
-              leftIcon={<Download className="w-3.5 h-3.5" />}
-            >
-              Export CSV
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleExportJSON}
-              disabled={filteredEvents.length === 0}
-              leftIcon={<FileCode className="w-3.5 h-3.5" />}
-            >
-              Export JSON
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Filter and Search Bar */}
+    <div className="space-y-4">
+      {/* Finding A1: No duplicate page H1 header. Starts directly with filters & export actions */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-        {/* Search Input */}
-        <div className="relative flex-1 max-w-md">
+        {/* Search Input (Finding D7: min 280px) */}
+        <div className="relative flex-1 max-w-md min-w-[280px]">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-subtle)]" aria-hidden="true" />
           <input
             type="text"
@@ -165,8 +136,8 @@ export function AuditView({ auditEvents, onRefresh }: AuditViewProps) {
           />
         </div>
 
-        {/* Filter Chips */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+        {/* Segmented Control Height 32px with Counts (Finding D7) */}
+        <div className="flex items-center gap-1 bg-[var(--surface)] border border-[var(--border)] rounded-md p-0.5 h-8 overflow-x-auto">
           {EVENT_TYPE_OPTIONS.map((opt) => {
             const isSelected = selectedType === opt.value;
             return (
@@ -174,21 +145,45 @@ export function AuditView({ auditEvents, onRefresh }: AuditViewProps) {
                 key={opt.value}
                 type="button"
                 onClick={() => setSelectedType(opt.value)}
-                className={`text-xs px-2.5 py-1 rounded-md transition-colors whitespace-nowrap font-medium ${
+                className={`text-xs px-2.5 h-full rounded transition-colors whitespace-nowrap font-medium flex items-center gap-1.5 ${
                   isSelected
-                    ? "bg-[var(--accent-subtle)] text-[var(--accent-text)] border border-[var(--border-strong)]"
-                    : "text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)] border border-transparent"
+                    ? "bg-[var(--surface-hover)] text-[var(--text)] font-semibold shadow-xs"
+                    : "text-[var(--text-muted)] hover:text-[var(--text)]"
                 }`}
               >
-                {opt.label}
+                <span>{opt.label}</span>
+                <span className="text-[10px] px-1 py-0.2 rounded bg-[var(--surface-raised)] text-[var(--text-muted)] tabular-nums">
+                  {opt.count}
+                </span>
               </button>
             );
           })}
         </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleExportCSV}
+            disabled={filteredEvents.length === 0}
+            leftIcon={<Download className="w-3.5 h-3.5" />}
+          >
+            CSV
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleExportJSON}
+            disabled={filteredEvents.length === 0}
+            leftIcon={<FileCode className="w-3.5 h-3.5" />}
+          >
+            JSON
+          </Button>
+        </div>
       </div>
 
-      {/* Audit Log Table */}
-      <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden shadow-sm">
+      {/* Audit Log Table (Finding D3: sentence-case headers, 40px rows) */}
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden shadow-xs">
         {filteredEvents.length === 0 ? (
           <EmptyState
             icon={<History className="w-4 h-4" />}
@@ -200,35 +195,38 @@ export function AuditView({ auditEvents, onRefresh }: AuditViewProps) {
             }
           />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs" aria-label="Audit trail records">
-              <thead className="bg-[var(--surface-raised)] border-b border-[var(--border)] text-[var(--text-muted)] font-mono text-[11px] uppercase tracking-wider">
+          <div className="overflow-x-auto max-h-[600px]">
+            <table className="w-full text-left text-xs" aria-label="Audit trail records table">
+              <thead className="bg-[var(--surface-raised)] border-b border-[var(--border)] text-[var(--text-muted)] text-xs font-medium sticky top-0 z-10">
                 <tr>
                   <th scope="col" className="px-4 py-3">Event type</th>
                   <th scope="col" className="px-4 py-3">Event ID</th>
                   <th scope="col" className="px-4 py-3">Mandate reference</th>
                   <th scope="col" className="px-4 py-3">Request ID</th>
                   <th scope="col" className="px-4 py-3">Recorded</th>
-                  <th scope="col" className="px-4 py-3 text-right">Payload</th>
+                  <th scope="col" className="px-4 py-3 text-right">Details</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border)]">
                 {filteredEvents.map((evt) => (
                   <tr
                     key={evt.id}
-                    onClick={() => setSelectedEvent(evt)}
-                    className="hover:bg-[var(--surface-hover)] transition-colors cursor-pointer"
+                    onClick={() => {
+                      setSelectedEvent(evt);
+                      setActiveTab("overview");
+                    }}
+                    className="hover:bg-[var(--surface-hover)] transition-colors cursor-pointer h-10"
                   >
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-2.5">
                       {getEventBadge(evt.event_type)}
                     </td>
-                    <td className="px-4 py-3 font-mono">
+                    <td className="px-4 py-2.5">
                       <AddressChip
                         address={evt.id}
                         truncateLength={4}
                       />
                     </td>
-                    <td className="px-4 py-3 font-mono">
+                    <td className="px-4 py-2.5">
                       {evt.mandate_id ? (
                         <AddressChip
                           address={evt.mandate_id}
@@ -238,7 +236,7 @@ export function AuditView({ auditEvents, onRefresh }: AuditViewProps) {
                         <span className="text-[var(--text-subtle)]">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 font-mono">
+                    <td className="px-4 py-2.5">
                       {evt.request_id ? (
                         <AddressChip
                           address={evt.request_id}
@@ -248,20 +246,21 @@ export function AuditView({ auditEvents, onRefresh }: AuditViewProps) {
                         <span className="text-[var(--text-subtle)]">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-[var(--text-muted)] whitespace-nowrap">
+                    <td className="px-4 py-2.5 text-[var(--text-muted)] whitespace-nowrap tabular-nums">
                       {formatDateTime(evt.created_at)}
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-2.5 text-right">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedEvent(evt);
+                          setActiveTab("overview");
                         }}
-                        rightIcon={<FileCode className="w-3.5 h-3.5" />}
+                        rightIcon={<Layers className="w-3.5 h-3.5" />}
                       >
-                        JSON
+                        Inspect
                       </Button>
                     </td>
                   </tr>
@@ -272,70 +271,124 @@ export function AuditView({ auditEvents, onRefresh }: AuditViewProps) {
         )}
       </div>
 
-      {/* Structured Details JSON Inspector Drawer */}
+      {/* Structured Details JSON Inspector Drawer (Finding E2: 3-tab drawer) */}
       <Drawer
         isOpen={!!selectedEvent}
         onClose={() => setSelectedEvent(null)}
-        title="Audit event payload"
-        description={`Immutable record for ${selectedEvent?.event_type || ""}`}
+        title="Audit event inspection"
+        description={`Cryptographic log record for ${selectedEvent?.event_type || ""}`}
         size="lg"
       >
         {selectedEvent && (
           <div className="space-y-5">
-            {/* Metadata Summary */}
-            <div className="p-4 rounded-lg bg-[var(--surface-raised)] border border-[var(--border)] space-y-2.5 text-xs">
-              <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
-                <span className="text-[var(--text-muted)]">Event ID</span>
-                <AddressChip address={selectedEvent.id} truncateLength={8} />
-              </div>
-              <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
-                <span className="text-[var(--text-muted)]">Event Type</span>
-                {getEventBadge(selectedEvent.event_type)}
-              </div>
-              <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
-                <span className="text-[var(--text-muted)]">Recorded Timestamp</span>
-                <span className="font-mono text-[var(--text)]">
-                  {selectedEvent.created_at ? new Date(selectedEvent.created_at).toISOString() : "-"}
-                </span>
-              </div>
-              {selectedEvent.mandate_id && (
+            {/* Drawer Tabs */}
+            <div className="flex border-b border-[var(--border)] gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveTab("overview")}
+                className={`pb-2.5 text-xs font-medium border-b-2 transition-colors ${
+                  activeTab === "overview"
+                    ? "border-[var(--accent)] text-[var(--text)] font-semibold"
+                    : "border-transparent text-[var(--text-muted)] hover:text-[var(--text)]"
+                }`}
+              >
+                Overview
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("details")}
+                className={`pb-2.5 text-xs font-medium border-b-2 transition-colors ${
+                  activeTab === "details"
+                    ? "border-[var(--accent)] text-[var(--text)] font-semibold"
+                    : "border-transparent text-[var(--text-muted)] hover:text-[var(--text)]"
+                }`}
+              >
+                Event parameters
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("json")}
+                className={`pb-2.5 text-xs font-medium border-b-2 transition-colors ${
+                  activeTab === "json"
+                    ? "border-[var(--accent)] text-[var(--text)] font-semibold"
+                    : "border-transparent text-[var(--text-muted)] hover:text-[var(--text)]"
+                }`}
+              >
+                Raw JSON
+              </button>
+            </div>
+
+            {/* TAB 1: OVERVIEW */}
+            {activeTab === "overview" && (
+              <div className="p-4 rounded-lg bg-[var(--surface-raised)] border border-[var(--border)] space-y-3 text-xs">
                 <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
-                  <span className="text-[var(--text-muted)]">Mandate Ref</span>
-                  <AddressChip address={selectedEvent.mandate_id} truncateLength={8} />
+                  <span className="text-[var(--text-muted)]">Event ID</span>
+                  <AddressChip address={selectedEvent.id} truncateLength={8} />
                 </div>
-              )}
-              {selectedEvent.request_id && (
-                <div className="flex justify-between items-center py-1">
-                  <span className="text-[var(--text-muted)]">Request Ref</span>
-                  <AddressChip address={selectedEvent.request_id} truncateLength={8} />
+                <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
+                  <span className="text-[var(--text-muted)]">Event Classification</span>
+                  {getEventBadge(selectedEvent.event_type)}
                 </div>
-              )}
-            </div>
-
-            {/* Structured Details */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-[var(--text)]">Details payload (JSON)</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleCopyJson(selectedEvent.details)}
-                  leftIcon={
-                    copiedJson ? (
-                      <Check className="w-3.5 h-3.5 text-[var(--success-text)]" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5" />
-                    )
-                  }
-                >
-                  {copiedJson ? "Copied" : "Copy JSON"}
-                </Button>
+                <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
+                  <span className="text-[var(--text-muted)]">Recorded Timestamp</span>
+                  <span className="font-mono text-[var(--text)]">
+                    {selectedEvent.created_at ? new Date(selectedEvent.created_at).toISOString() : "-"}
+                  </span>
+                </div>
+                {selectedEvent.mandate_id && (
+                  <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
+                    <span className="text-[var(--text-muted)]">Mandate Policy Ref</span>
+                    <AddressChip address={selectedEvent.mandate_id} truncateLength={8} />
+                  </div>
+                )}
+                {selectedEvent.request_id && (
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-[var(--text-muted)]">Payment Request Ref</span>
+                    <AddressChip address={selectedEvent.request_id} truncateLength={8} />
+                  </div>
+                )}
               </div>
+            )}
 
-              <pre className="p-4 rounded-lg bg-[var(--canvas)] border border-[var(--border)] text-xs font-mono text-[var(--text)] overflow-x-auto max-h-96 select-all leading-relaxed">
-                {JSON.stringify(selectedEvent.details || {}, null, 2)}
-              </pre>
-            </div>
+            {/* TAB 2: EVENT PARAMETERS */}
+            {activeTab === "details" && (
+              <div className="space-y-3">
+                <div className="p-4 rounded-lg bg-[var(--surface-raised)] border border-[var(--border)] space-y-2 text-xs">
+                  <span className="font-semibold text-[var(--text)] block mb-1">Decoded event attributes</span>
+                  {selectedEvent.details && Object.keys(selectedEvent.details).length > 0 ? (
+                    <div className="space-y-2 font-mono text-[11px]">
+                      {Object.entries(selectedEvent.details).map(([k, v]) => (
+                        <div key={k} className="flex justify-between py-1 border-b border-[var(--border)]">
+                          <span className="text-[var(--text-muted)] font-sans">{k}</span>
+                          <span className="text-[var(--text)] truncate max-w-xs">{typeof v === "object" ? JSON.stringify(v) : String(v)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[var(--text-muted)]">No additional key-value attributes recorded for this event.</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: RAW JSON */}
+            {activeTab === "json" && (
+              <div className="space-y-3">
+                <div className="flex justify-end">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => handleCopyJson(selectedEvent)}
+                    leftIcon={copiedJson ? <Check className="w-3.5 h-3.5 text-[var(--success-text)]" /> : <Copy className="w-3.5 h-3.5" />}
+                  >
+                    {copiedJson ? "Copied" : "Copy JSON"}
+                  </Button>
+                </div>
+                <pre className="p-4 rounded-lg bg-[var(--surface-raised)] border border-[var(--border)] text-xs font-mono text-[var(--text)] overflow-x-auto max-h-96 select-all leading-relaxed">
+                  {JSON.stringify(selectedEvent, null, 2)}
+                </pre>
+              </div>
+            )}
           </div>
         )}
       </Drawer>

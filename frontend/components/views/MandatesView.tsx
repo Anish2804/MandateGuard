@@ -67,6 +67,8 @@ export function MandatesView({
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "exhausted" | "revoked">("all");
   const [selectedMandate, setSelectedMandate] = useState<Mandate | null>(null);
+  const [drawerTab, setDrawerTab] = useState<"overview" | "rules" | "json">("overview");
+  const [copiedJson, setCopiedJson] = useState(false);
   const [showCreateDrawer, setShowCreateDrawer] = useState(isCreateOpen);
 
   // Stepper State: 1 (Basics) -> 2 (Limits) -> 3 (Recipients) -> 4 (Review)
@@ -83,6 +85,13 @@ export function MandatesView({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+
+  const counts = {
+    all: mandates.length,
+    active: mandates.filter((m) => !m.is_revoked && m.remaining_budget > 0).length,
+    exhausted: mandates.filter((m) => !m.is_revoked && m.remaining_budget <= 0).length,
+    revoked: mandates.filter((m) => m.is_revoked).length,
+  };
 
   const filteredMandates = mandates.filter((m) => {
     const matchesSearch =
@@ -177,47 +186,62 @@ export function MandatesView({
     <div className="space-y-4">
       {/* Top Filter Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex flex-1 items-center gap-2 max-w-md">
-          <div className="relative flex-1">
+        <div className="flex flex-1 items-center gap-2 max-w-xl">
+          {/* Finding D7: search input min 280px */}
+          <div className="relative flex-1 min-w-[280px]">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
             <input
               type="text"
-              placeholder="Filter by title, ID, or agent address..."
+              placeholder="Search mandates by title, ID, or agent address..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-[var(--surface)] border border-[var(--border)] rounded pl-8 pr-3 py-1.5 text-xs text-[var(--text)] placeholder-[var(--text-subtle)] focus:outline-none focus:border-[var(--border-strong)]"
+              className="w-full bg-[var(--surface)] border border-[var(--border)] rounded pl-8 pr-3 py-1.5 text-xs text-[var(--text)] placeholder-[var(--text-subtle)] focus:outline-none focus:border-[var(--accent)]"
             />
           </div>
 
-          <div className="flex items-center gap-1 bg-[var(--surface)] border border-[var(--border)] rounded p-0.5 text-xs">
-            {(["all", "active", "exhausted", "revoked"] as const).map((s) => (
+          {/* Finding D7: segmented control height 32px with counts */}
+          <div className="flex items-center gap-1 bg-[var(--surface)] border border-[var(--border)] rounded p-0.5 text-xs h-8">
+            {(
+              [
+                { id: "all", label: "All", count: counts.all },
+                { id: "active", label: "Active", count: counts.active },
+                { id: "exhausted", label: "Exhausted", count: counts.exhausted },
+                { id: "revoked", label: "Revoked", count: counts.revoked },
+              ] as const
+            ).map((s) => (
               <button
-                key={s}
+                key={s.id}
                 type="button"
-                onClick={() => setStatusFilter(s)}
-                className={`px-2 py-0.5 rounded capitalize text-[11px] font-medium transition-colors ${
-                  statusFilter === s
-                    ? "bg-[var(--surface-hover)] text-[var(--text)] shadow-xs"
+                onClick={() => setStatusFilter(s.id)}
+                className={`px-2.5 h-full rounded capitalize text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                  statusFilter === s.id
+                    ? "bg-[var(--surface-hover)] text-[var(--text)] font-semibold shadow-xs"
                     : "text-[var(--text-muted)] hover:text-[var(--text)]"
                 }`}
               >
-                {s}
+                <span>{s.label}</span>
+                <span className="text-[10px] px-1 py-0.2 rounded bg-[var(--surface-raised)] text-[var(--text-muted)] tabular-nums">
+                  {s.count}
+                </span>
               </button>
             ))}
           </div>
         </div>
 
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => {
-            setCurrentStep(1);
-            setShowCreateDrawer(true);
-          }}
-          leftIcon={<PlusCircle className="w-3.5 h-3.5" />}
-        >
-          Create mandate
-        </Button>
+        {/* Finding A4: Only show header CTA if there are filtered items. When 0, empty state provides the CTA */}
+        {filteredMandates.length > 0 && (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setCurrentStep(1);
+              setShowCreateDrawer(true);
+            }}
+            leftIcon={<PlusCircle className="w-3.5 h-3.5" />}
+          >
+            Create mandate
+          </Button>
+        )}
       </div>
 
       {/* Main Table */}
@@ -242,16 +266,16 @@ export function MandatesView({
               }
             />
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-[600px]">
               <table className="w-full text-left text-xs" aria-label="Mandate policies table">
-                <thead className="bg-[var(--surface-hover)] border-b border-[var(--border)] text-[var(--text-muted)] font-medium">
+                <thead className="bg-[var(--surface-raised)] border-b border-[var(--border)] text-[var(--text-muted)] text-xs font-medium sticky top-0 z-10">
                   <tr>
-                    <th scope="col" className="px-4 py-2.5">Policy</th>
-                    <th scope="col" className="px-4 py-2.5">Agent</th>
-                    <th scope="col" className="px-4 py-2.5">Per-tx / Cap</th>
-                    <th scope="col" className="px-4 py-2.5">Budget progress</th>
-                    <th scope="col" className="px-4 py-2.5">Status</th>
-                    <th scope="col" className="px-4 py-2.5 text-right">Actions</th>
+                    <th scope="col" className="px-4 py-3">Policy</th>
+                    <th scope="col" className="px-4 py-3">Agent</th>
+                    <th scope="col" className="px-4 py-3">Per-tx / Cap</th>
+                    <th scope="col" className="px-4 py-3">Budget progress</th>
+                    <th scope="col" className="px-4 py-3">Status</th>
+                    <th scope="col" className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border)]">
@@ -263,8 +287,11 @@ export function MandatesView({
                     return (
                       <tr
                         key={m.id}
-                        onClick={() => setSelectedMandate(m)}
-                        className="hover:bg-[var(--surface-hover)] transition-colors cursor-pointer"
+                        onClick={() => {
+                          setSelectedMandate(m);
+                          setDrawerTab("overview");
+                        }}
+                        className="hover:bg-[var(--surface-hover)] transition-colors cursor-pointer h-10"
                       >
                         <td className="px-4 py-2.5">
                           <div className="font-medium text-[var(--text)] tracking-tight">
@@ -279,14 +306,14 @@ export function MandatesView({
                           <AddressChip address={m.agent} truncateLength={4} />
                         </td>
 
-                        <td className="px-4 py-2.5 font-mono tabular-nums">
+                        <td className="px-4 py-2.5 tabular-nums">
                           <span className="font-semibold text-[var(--text)]">${m.max_amount_per_tx}</span>
                           <span className="text-[var(--text-muted)]"> / ${m.max_cumulative_amount} USDC</span>
                         </td>
 
                         <td className="px-4 py-2.5">
-                          <div className="w-32 space-y-1 font-mono text-[10px] tabular-nums">
-                            <div className="flex justify-between text-[var(--text-muted)]">
+                          <div className="w-32 space-y-1 text-[11px] tabular-nums">
+                            <div className="flex justify-between text-[var(--text-muted)] text-[10px]">
                               <span>${m.current_spent.toFixed(0)} spent</span>
                               <span>${m.remaining_budget.toFixed(0)} left</span>
                             </div>
@@ -315,7 +342,10 @@ export function MandatesView({
                               variant="ghost"
                               size="sm"
                               className="text-[11px] h-7 px-2"
-                              onClick={() => setSelectedMandate(m)}
+                              onClick={() => {
+                                setSelectedMandate(m);
+                                setDrawerTab("overview");
+                              }}
                             >
                               Details
                             </Button>
@@ -342,7 +372,7 @@ export function MandatesView({
         </CardContent>
       </Card>
 
-      {/* Row Detail Drawer */}
+      {/* Row Detail Drawer (Finding E2: 3-tab drawer) */}
       <Drawer
         isOpen={!!selectedMandate}
         onClose={() => setSelectedMandate(null)}
@@ -379,79 +409,144 @@ export function MandatesView({
       >
         {selectedMandate && (
           <div className="space-y-4">
-            {/* Status overview */}
-            <div className="p-3 rounded bg-[var(--surface-hover)] border border-[var(--border)] flex items-center justify-between">
-              <span className="text-xs text-[var(--text-muted)]">Policy status</span>
-              {selectedMandate.is_revoked ? (
-                <Badge variant="danger" size="md">Revoked</Badge>
-              ) : selectedMandate.remaining_budget <= 0 ? (
-                <Badge variant="warning" size="md">Exhausted</Badge>
-              ) : (
-                <Badge variant="success" size="md">Active (Version {selectedMandate.version})</Badge>
-              )}
+            {/* Drawer Tabs */}
+            <div className="flex border-b border-[var(--border)] gap-2">
+              <button
+                type="button"
+                onClick={() => setDrawerTab("overview")}
+                className={`pb-2.5 text-xs font-medium border-b-2 transition-colors ${
+                  drawerTab === "overview"
+                    ? "border-[var(--accent)] text-[var(--text)] font-semibold"
+                    : "border-transparent text-[var(--text-muted)] hover:text-[var(--text)]"
+                }`}
+              >
+                Overview
+              </button>
+              <button
+                type="button"
+                onClick={() => setDrawerTab("rules")}
+                className={`pb-2.5 text-xs font-medium border-b-2 transition-colors ${
+                  drawerTab === "rules"
+                    ? "border-[var(--accent)] text-[var(--text)] font-semibold"
+                    : "border-transparent text-[var(--text-muted)] hover:text-[var(--text)]"
+                }`}
+              >
+                Rules & limits
+              </button>
+              <button
+                type="button"
+                onClick={() => setDrawerTab("json")}
+                className={`pb-2.5 text-xs font-medium border-b-2 transition-colors ${
+                  drawerTab === "json"
+                    ? "border-[var(--accent)] text-[var(--text)] font-semibold"
+                    : "border-transparent text-[var(--text-muted)] hover:text-[var(--text)]"
+                }`}
+              >
+                Raw JSON
+              </button>
             </div>
 
-            {/* Budget Breakdown */}
-            <div className="space-y-2">
-              <span className="text-xs font-semibold text-[var(--text)] block">Budget allocation</span>
-              <div className="p-3 rounded bg-[var(--surface)] border border-[var(--border)] space-y-2">
-                <div className="flex justify-between font-mono text-xs tabular-nums">
-                  <span className="text-[var(--text-muted)]">Spent: ${selectedMandate.current_spent.toFixed(2)}</span>
-                  <span className="font-semibold text-[var(--text)]">Limit: ${selectedMandate.max_cumulative_amount.toFixed(2)} USDC</span>
-                </div>
-                <div className="w-full bg-[var(--surface-hover)] border border-[var(--border)] rounded-full h-2 overflow-hidden flex">
-                  <div
-                    className="bg-[var(--accent)] h-full"
-                    style={{
-                      width: `${(selectedMandate.current_spent / selectedMandate.max_cumulative_amount) * 100}%`,
-                    }}
-                  />
-                  <div
-                    className="bg-[var(--warning)] h-full"
-                    style={{
-                      width: `${(selectedMandate.reserved_amount / selectedMandate.max_cumulative_amount) * 100}%`,
-                    }}
-                  />
-                </div>
-                <div className="flex justify-between text-[11px] text-[var(--text-muted)] font-mono">
-                  <span>Reserved: ${selectedMandate.reserved_amount.toFixed(2)}</span>
-                  <span className="text-[var(--success-text)] font-medium">Available: ${selectedMandate.remaining_budget.toFixed(2)}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Parameters list */}
-            <div className="space-y-2">
-              <span className="text-xs font-semibold text-[var(--text)] block">Policy rules</span>
-              <div className="p-3 rounded bg-[var(--surface)] border border-[var(--border)] space-y-2 text-xs">
-                <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
-                  <span className="text-[var(--text-muted)]">Per-tx ceiling:</span>
-                  <span className="font-mono font-semibold text-[var(--text)]">${selectedMandate.max_amount_per_tx.toFixed(2)} USDC</span>
-                </div>
-                <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
-                  <span className="text-[var(--text-muted)]">Authorized agent:</span>
-                  <AddressChip address={selectedMandate.agent} truncateLength={6} />
-                </div>
-                <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
-                  <span className="text-[var(--text-muted)]">Allowed destination:</span>
-                  {selectedMandate.recipient ? (
-                    <AddressChip address={selectedMandate.recipient} truncateLength={6} />
+            {/* TAB 1: OVERVIEW */}
+            {drawerTab === "overview" && (
+              <div className="space-y-4">
+                {/* Status overview */}
+                <div className="p-3.5 rounded-lg bg-[var(--surface-raised)] border border-[var(--border)] flex items-center justify-between">
+                  <span className="text-xs text-[var(--text-muted)]">Policy status</span>
+                  {selectedMandate.is_revoked ? (
+                    <Badge variant="danger" size="md">Revoked</Badge>
+                  ) : selectedMandate.remaining_budget <= 0 ? (
+                    <Badge variant="warning" size="md">Exhausted</Badge>
                   ) : (
-                    <span className="text-[var(--text)]">Any recipient</span>
+                    <Badge variant="success" size="md">Active (Version {selectedMandate.version})</Badge>
                   )}
                 </div>
-                <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
-                  <span className="text-[var(--text-muted)]">Smart account:</span>
-                  <AddressChip address={selectedMandate.account} truncateLength={6} />
-                </div>
-                <div className="flex justify-between items-center py-1">
-                  <span className="text-[var(--text-muted)]">Expiry timestamp:</span>
-                  <span className="font-mono text-[var(--text)]">
-                    {new Date(selectedMandate.expiry * 1000).toLocaleString()}
-                  </span>
+
+                {/* Budget Breakdown */}
+                <div className="space-y-2">
+                  <span className="text-xs font-semibold text-[var(--text)] block">Budget allocation</span>
+                  <div className="p-3.5 rounded-lg bg-[var(--surface-raised)] border border-[var(--border)] space-y-2.5">
+                    <div className="flex justify-between text-xs tabular-nums">
+                      <span className="text-[var(--text-muted)]">Spent: ${selectedMandate.current_spent.toFixed(2)}</span>
+                      <span className="font-semibold text-[var(--text)]">Limit: ${selectedMandate.max_cumulative_amount.toFixed(2)} USDC</span>
+                    </div>
+                    <div className="w-full bg-[var(--surface-hover)] border border-[var(--border)] rounded-full h-2 overflow-hidden flex">
+                      <div
+                        className="bg-[var(--accent)] h-full"
+                        style={{
+                          width: `${(selectedMandate.current_spent / selectedMandate.max_cumulative_amount) * 100}%`,
+                        }}
+                      />
+                      <div
+                        className="bg-[var(--warning)] h-full"
+                        style={{
+                          width: `${(selectedMandate.reserved_amount / selectedMandate.max_cumulative_amount) * 100}%`,
+                        }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-[11px] text-[var(--text-muted)] tabular-nums">
+                      <span>Reserved: ${selectedMandate.reserved_amount.toFixed(2)}</span>
+                      <span className="text-[var(--success-text)] font-semibold">Available: ${selectedMandate.remaining_budget.toFixed(2)}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
+
+            {/* TAB 2: RULES & LIMITS */}
+            {drawerTab === "rules" && (
+              <div className="space-y-2">
+                <div className="p-4 rounded-lg bg-[var(--surface-raised)] border border-[var(--border)] space-y-2.5 text-xs">
+                  <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
+                    <span className="text-[var(--text-muted)]">Per-tx ceiling:</span>
+                    <span className="font-semibold text-[var(--text)] tabular-nums">${selectedMandate.max_amount_per_tx.toFixed(2)} USDC</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
+                    <span className="text-[var(--text-muted)]">Authorized agent:</span>
+                    <AddressChip address={selectedMandate.agent} truncateLength={6} />
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
+                    <span className="text-[var(--text-muted)]">Allowed destination:</span>
+                    {selectedMandate.recipient ? (
+                      <AddressChip address={selectedMandate.recipient} truncateLength={6} />
+                    ) : (
+                      <span className="text-[var(--text)]">Any recipient</span>
+                    )}
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
+                    <span className="text-[var(--text-muted)]">Smart account:</span>
+                    <AddressChip address={selectedMandate.account} truncateLength={6} />
+                  </div>
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-[var(--text-muted)]">Expiry timestamp:</span>
+                    <span className="text-[var(--text)] tabular-nums">
+                      {new Date(selectedMandate.expiry * 1000).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: RAW JSON */}
+            {drawerTab === "json" && (
+              <div className="space-y-3">
+                <div className="flex justify-end">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(JSON.stringify(selectedMandate, null, 2));
+                      setCopiedJson(true);
+                      setTimeout(() => setCopiedJson(false), 2000);
+                    }}
+                  >
+                    {copiedJson ? "Copied" : "Copy JSON"}
+                  </Button>
+                </div>
+                <pre className="p-3.5 rounded-lg bg-[var(--surface-raised)] border border-[var(--border)] font-mono text-[11px] text-[var(--text)] overflow-x-auto max-h-80 select-all leading-relaxed">
+                  {JSON.stringify(selectedMandate, null, 2)}
+                </pre>
+              </div>
+            )}
           </div>
         )}
       </Drawer>

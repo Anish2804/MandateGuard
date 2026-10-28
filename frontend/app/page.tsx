@@ -42,6 +42,14 @@ import {
   revokeMandateOnChain,
 } from "../lib/web3";
 import { SUPPORTED_CHAINS } from "../lib/contracts";
+import { useNetworkState } from "../lib/useNetworkState";
+import {
+  DEMO_AGENTS,
+  DEMO_MANDATES,
+  DEMO_REQUESTS,
+  DEMO_AUDIT_EVENTS,
+  DEMO_SMART_ACCOUNT,
+} from "../lib/demoData";
 
 export default function SecurityConsole() {
   const [currentRoute, setCurrentRoute] = useState<NavRoute>("overview");
@@ -53,6 +61,28 @@ export default function SecurityConsole() {
   const [activeSmartAccount, setActiveSmartAccount] = useState<string>(SMART_ACCOUNT_ADDR);
   const [isDeployingAccount, setIsDeployingAccount] = useState(false);
   const [isClaimingFaucet, setIsClaimingFaucet] = useState(false);
+
+  // Global Network State (Finding B3: single source of truth)
+  const networkState = useNetworkState(walletChainId);
+
+  // Demo Mode State (Finding H1: client-side only, persisted in localStorage)
+  const [isDemoMode, setIsDemoMode] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("mg_demo_mode");
+      if (saved === "true") {
+        setIsDemoMode(true);
+      }
+    }
+  }, []);
+
+  const handleToggleDemoMode = (val: boolean) => {
+    setIsDemoMode(val);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("mg_demo_mode", String(val));
+    }
+  };
 
   // Application Telemetry State (Ground-Truth Data Only)
   const [health, setHealth] = useState<SystemHealth | null>(null);
@@ -227,9 +257,17 @@ export default function SecurityConsole() {
     );
   };
 
-  const activeMandatesCount = mandates.filter((m) => !m.is_revoked && m.remaining_budget > 0).length;
-  const pendingRequestsCount = requests.filter((r) => r.status === "AUTHORIZED" || (r.verdict === 1 && r.status !== "SETTLED")).length;
-  const activeAgentsCount = apiKeys.filter((k) => k.is_active).length;
+  // Display Telemetry: Switch cleanly between demo dataset and live telemetry
+  const displayMandates = isDemoMode ? DEMO_MANDATES : mandates;
+  const displayRequests = isDemoMode ? DEMO_REQUESTS : requests;
+  const displayAuditEvents = isDemoMode ? DEMO_AUDIT_EVENTS : auditEvents;
+  const displayApiKeys = isDemoMode ? DEMO_AGENTS : apiKeys;
+  const displayBalance = isDemoMode ? 50000.00 : smartAccountBalance;
+  const displaySmartAccount = isDemoMode ? DEMO_SMART_ACCOUNT : activeSmartAccount;
+
+  const activeMandatesCount = displayMandates.filter((m) => !m.is_revoked && m.remaining_budget > 0).length;
+  const pendingRequestsCount = displayRequests.filter((r) => r.status === "AUTHORIZED" || (r.verdict === 1 && r.status !== "SETTLED")).length;
+  const activeAgentsCount = displayApiKeys.filter((k) => k.is_active).length;
 
   return (
     <AppShell
@@ -239,7 +277,7 @@ export default function SecurityConsole() {
       walletChainId={walletChainId}
       onConnectWallet={handleConnectWallet}
       userSmartAccounts={userSmartAccounts}
-      activeSmartAccount={activeSmartAccount}
+      activeSmartAccount={displaySmartAccount}
       onSelectSmartAccount={(acc) => {
         setActiveSmartAccount(acc);
         showToast("info", `Active Smart Account switched to ${acc.slice(0, 6)}...${acc.slice(-4)}`);
@@ -252,7 +290,11 @@ export default function SecurityConsole() {
       isRefreshing={isRefreshing}
       backendHealthy={health?.status === "healthy"}
       rpcHealthy={!rpcError}
-      smartAccountBalance={smartAccountBalance}
+      smartAccountBalance={displayBalance}
+      latencyMs={networkState.latencyMs}
+      isMismatch={networkState.isMismatch}
+      isDemoMode={isDemoMode}
+      onToggleDemoMode={handleToggleDemoMode}
       counts={{
         activeMandates: activeMandatesCount,
         pendingRequests: pendingRequestsCount,
@@ -263,11 +305,15 @@ export default function SecurityConsole() {
       {currentRoute === "overview" && (
         <OverviewView
           health={health}
-          mandates={mandates}
-          requests={requests}
-          auditEvents={auditEvents}
-          smartAccountBalance={smartAccountBalance}
+          mandates={displayMandates}
+          requests={displayRequests}
+          auditEvents={displayAuditEvents}
+          smartAccountBalance={displayBalance}
           rpcError={rpcError}
+          walletAddress={walletAddress}
+          isMismatch={networkState.isMismatch}
+          onConnectWallet={handleConnectWallet}
+          agentCount={activeAgentsCount}
           onNavigate={setCurrentRoute}
           onOpenCreateMandate={() => setCurrentRoute("mandates")}
         />
@@ -276,8 +322,8 @@ export default function SecurityConsole() {
       {/* Route 2: Agents */}
       {currentRoute === "agents" && (
         <AgentsView
-          apiKeys={apiKeys}
-          activeSmartAccount={activeSmartAccount}
+          apiKeys={displayApiKeys}
+          activeSmartAccount={displaySmartAccount}
           onRefresh={loadData}
           onCreateApiKey={async (name, account) => {
             const res = await createApiKey({
@@ -301,8 +347,8 @@ export default function SecurityConsole() {
       {/* Route 3: Mandates & Policies */}
       {currentRoute === "mandates" && (
         <MandatesView
-          mandates={mandates}
-          activeSmartAccount={activeSmartAccount}
+          mandates={displayMandates}
+          activeSmartAccount={displaySmartAccount}
           walletAddress={walletAddress}
           walletChainId={walletChainId}
           onRefresh={loadData}
@@ -324,9 +370,9 @@ export default function SecurityConsole() {
       {/* Route 4: Payment Requests */}
       {currentRoute === "requests" && (
         <RequestsView
-          requests={requests}
-          mandates={mandates}
-          activeSmartAccount={activeSmartAccount}
+          requests={displayRequests}
+          mandates={displayMandates}
+          activeSmartAccount={displaySmartAccount}
           walletAddress={walletAddress}
           walletChainId={walletChainId}
           onRefresh={loadData}
@@ -337,7 +383,7 @@ export default function SecurityConsole() {
       {/* Route 5: Verdict Verification */}
       {currentRoute === "verdict" && (
         <VerdictView
-          activeSmartAccount={activeSmartAccount}
+          activeSmartAccount={displaySmartAccount}
           defaultAuthorizerSigner={health?.authorizer_signer || null}
           walletChainId={walletChainId}
         />
@@ -346,25 +392,25 @@ export default function SecurityConsole() {
       {/* Route 6: Transactions */}
       {currentRoute === "transactions" && (
         <TransactionsView
-          requests={requests}
+          requests={displayRequests}
           walletChainId={walletChainId}
-          activeSmartAccount={activeSmartAccount}
+          activeSmartAccount={displaySmartAccount}
         />
       )}
 
       {/* Route 7: Audit Trail */}
       {currentRoute === "audit" && (
-        <AuditView auditEvents={auditEvents} onRefresh={loadData} />
+        <AuditView auditEvents={displayAuditEvents} onRefresh={loadData} />
       )}
 
       {/* Route 8: Signers & Security */}
       {currentRoute === "security" && (
         <SecurityView
           health={health}
-          activeSmartAccount={activeSmartAccount}
+          activeSmartAccount={displaySmartAccount}
           walletAddress={walletAddress}
           walletChainId={walletChainId}
-          smartAccountBalance={smartAccountBalance}
+          smartAccountBalance={displayBalance}
           onRefresh={loadData}
           showToast={showToast}
         />
@@ -375,7 +421,9 @@ export default function SecurityConsole() {
         <SettingsView
           walletAddress={walletAddress}
           walletChainId={walletChainId}
-          activeSmartAccount={activeSmartAccount}
+          activeSmartAccount={displaySmartAccount}
+          isDemoMode={isDemoMode}
+          onToggleDemoMode={handleToggleDemoMode}
           onRefresh={loadData}
           showToast={showToast}
         />
