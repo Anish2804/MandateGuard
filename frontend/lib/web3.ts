@@ -271,3 +271,131 @@ export async function executePaymentViaWallet(
 
   return txHash;
 }
+
+// Register a human mandate policy directly on-chain on the Smart Account
+export async function registerMandateOnChain(
+  smartAccountAddress: `0x${string}`,
+  params: {
+    mandateId: `0x${string}`;
+    agent: `0x${string}`;
+    token: `0x${string}`;
+    recipient: `0x${string}`;
+    maxAmountPerTx: number;
+    maxCumulativeAmount: number;
+    startTime: number;
+    expiry: number;
+  },
+  senderAddress: `0x${string}`,
+  chainId: number = DEFAULT_CHAIN_ID
+): Promise<Hash> {
+  if (!hasInjectedProvider()) {
+    throw new Error("No Web3 wallet detected");
+  }
+
+  await switchWalletNetwork(chainId).catch(() => null);
+
+  const ethereum = (window as any).ethereum;
+  const targetChain = chainId === 84532 ? baseSepolia : undefined;
+  const walletClient = createWalletClient({
+    account: senderAddress,
+    chain: targetChain,
+    transport: custom(ethereum),
+  });
+
+  const txHash = await walletClient.writeContract({
+    address: smartAccountAddress,
+    abi: SMART_ACCOUNT_ABI,
+    functionName: "registerMandate",
+    args: [
+      params.mandateId,
+      params.agent,
+      params.token,
+      params.recipient,
+      parseUnits(params.maxAmountPerTx.toString(), 6),
+      parseUnits(params.maxCumulativeAmount.toString(), 6),
+      BigInt(params.startTime),
+      BigInt(params.expiry),
+    ],
+  });
+
+  return txHash;
+}
+
+// Revoke a mandate policy on-chain
+export async function revokeMandateOnChain(
+  smartAccountAddress: `0x${string}`,
+  mandateId: `0x${string}`,
+  senderAddress: `0x${string}`,
+  chainId: number = DEFAULT_CHAIN_ID
+): Promise<Hash> {
+  if (!hasInjectedProvider()) {
+    throw new Error("No Web3 wallet detected");
+  }
+
+  await switchWalletNetwork(chainId).catch(() => null);
+
+  const ethereum = (window as any).ethereum;
+  const targetChain = chainId === 84532 ? baseSepolia : undefined;
+  const walletClient = createWalletClient({
+    account: senderAddress,
+    chain: targetChain,
+    transport: custom(ethereum),
+  });
+
+  const txHash = await walletClient.writeContract({
+    address: smartAccountAddress,
+    abi: SMART_ACCOUNT_ABI,
+    functionName: "revokeMandate",
+    args: [mandateId],
+  });
+
+  return txHash;
+}
+
+// Emergency withdrawal of tokens by owner
+export async function emergencyWithdrawTokenViaWallet(
+  smartAccountAddress: `0x${string}`,
+  tokenAddress: `0x${string}`,
+  recipientAddress: `0x${string}`,
+  amount: number,
+  senderAddress: `0x${string}`,
+  chainId: number = DEFAULT_CHAIN_ID
+): Promise<Hash> {
+  if (!hasInjectedProvider()) {
+    throw new Error("No Web3 wallet detected");
+  }
+
+  await switchWalletNetwork(chainId).catch(() => null);
+
+  const ethereum = (window as any).ethereum;
+  const targetChain = chainId === 84532 ? baseSepolia : undefined;
+  const walletClient = createWalletClient({
+    account: senderAddress,
+    chain: targetChain,
+    transport: custom(ethereum),
+  });
+
+  const txHash = await walletClient.writeContract({
+    address: smartAccountAddress,
+    abi: SMART_ACCOUNT_ABI,
+    functionName: "emergencyWithdrawToken",
+    args: [tokenAddress, recipientAddress, parseUnits(amount.toString(), 6)],
+  });
+
+  return txHash;
+}
+
+// Fetch transaction receipt from RPC for on-chain verification
+export async function fetchTransactionReceipt(
+  txHash: `0x${string}`,
+  chainId: number = DEFAULT_CHAIN_ID
+) {
+  try {
+    const client = getPublicClient(chainId);
+    const receipt = await client.getTransactionReceipt({ hash: txHash });
+    return receipt;
+  } catch (err) {
+    console.warn("Could not fetch receipt:", err);
+    return null;
+  }
+}

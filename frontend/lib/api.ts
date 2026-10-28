@@ -211,7 +211,17 @@ export async function rpcCall(method: string, params: any[] = []): Promise<any> 
   return data.result;
 }
 
-export async function getOnChainBalances(merchantAddr: string, targetAccount: string = SMART_ACCOUNT_ADDR) {
+export interface OnChainBalances {
+  smartAccountBal: number | null;
+  merchantBal: number | null;
+  blockNumber: number | null;
+  error?: string | null;
+}
+
+export async function getOnChainBalances(
+  merchantAddr: string,
+  targetAccount: string = SMART_ACCOUNT_ADDR
+): Promise<OnChainBalances> {
   try {
     // 0x70a08231 = balanceOf(address)
     const cleanAccount = (targetAccount || SMART_ACCOUNT_ADDR).toLowerCase().replace("0x", "").padStart(64, "0");
@@ -221,7 +231,7 @@ export async function getOnChainBalances(merchantAddr: string, targetAccount: st
     ]);
     const smartAccountBal = parseInt(accountBalHex || "0x0", 16) / 1e6;
 
-    let merchantBal = 0;
+    let merchantBal: number | null = 0;
     if (merchantAddr && merchantAddr.startsWith("0x")) {
       const cleanMerchant = merchantAddr.toLowerCase().replace("0x", "").padStart(64, "0");
       const merchantBalHex = await rpcCall("eth_call", [
@@ -234,10 +244,15 @@ export async function getOnChainBalances(merchantAddr: string, targetAccount: st
     const blockNumHex = await rpcCall("eth_blockNumber", []);
     const blockNumber = parseInt(blockNumHex, 16);
 
-    return { smartAccountBal, merchantBal, blockNumber };
-  } catch (err) {
-    console.warn("RPC query fallback:", err);
-    return { smartAccountBal: 50000, merchantBal: 0, blockNumber: 1 };
+    return { smartAccountBal, merchantBal, blockNumber, error: null };
+  } catch (err: any) {
+    console.warn("RPC balance query failed:", err);
+    return {
+      smartAccountBal: null,
+      merchantBal: null,
+      blockNumber: null,
+      error: err?.message || "RPC connection failed",
+    };
   }
 }
 

@@ -86,18 +86,53 @@
   - Foundry smart contract suite: **25/25 PASSED**.
   - Pytest backend test suite: **13/13 PASSED** (1 skipped offline).
   - Live End-to-End integration suite: **8/8 PASSED**.
-- [x] Ran Next.js production build (`npm run build` in `frontend/`): **Clean compilation with 0 errors**.
+### PHASE 6: UI/UX & Frontend Architecture Audit (Master Prompt 02)
+- [x] Generated comprehensive UI/UX audit in `docs/ui-ux-audit.md` with prioritized findings (AUD-01 to AUD-10).
+- [x] Eliminated critical data integrity violation: removed fake 50,000 USDC balance fallback in `frontend/lib/api.ts:240` and initial state flash in `page.tsx`.
+- [x] Added `OnChainBalances` interface returning explicit null and error states when EVM RPC is unreachable.
+
+### PHASE 7: Production-Grade Frontend Redesign & Implementation
+- [x] Built accessible, reusable UI component library meeting WCAG 2.2 AA in `frontend/components/ui/`:
+  - `Button.tsx`: Variants (`primary`, `secondary`, `danger`, `outline`, `ghost`), loading spinners, focus rings.
+  - `Badge.tsx`: Semantic status tokens paired with icons and text for colorblind accessibility (`ALLOW`, `DENY`, `SETTLED`, `REVOKED`, `ACTIVE`, `PENDING`).
+  - `Card.tsx`: Obsidian dark styling, standard elevation, and compound primitives (`Header`, `Title`, `Content`, `Footer`).
+  - `Modal.tsx`: Accessible dialog with focus trap, ESC listener, and backdrop light-dismiss.
+  - `Skeleton.tsx`: Content loading placeholders.
+  - `Toast.tsx`: Accessible floating notifications with auto-dismiss.
+  - `StatusBeacon.tsx`: Non-color dependent connectivity beacons.
+- [x] Built Global Application Shell (`frontend/components/layout/AppShell.tsx`):
+  - Persistent left sidebar with all 9 required navigation routes and real live counters.
+  - Multi-tenant smart account selector discovering user-owned accounts via `MandateGuardFactory.getAccountsByOwner`.
+  - Top header with connected wallet pill, network indicator, and live connectivity beacons.
+  - Responsive mobile drawer navigation.
+- [x] Implemented all 9 dedicated production console views (`frontend/components/views/`):
+  1. `OverviewView.tsx`: Live metrics (active mandates, budget breakdown, request counts, vault reserves), system health, recent security events.
+  2. `AgentsView.tsx`: Multi-tenant agent API key provisioning, smart account lock, one-time secret display, active revocation.
+  3. `MandatesView.tsx`: Guided 7-step mandate creation modal (Sections A to G), budget progress bars, on-chain registration/revocation triggers.
+  4. `RequestsView.tsx`: Filterable request evaluation history, interactive payment simulator, on-chain execution with wallet, backend settlement.
+  5. `VerdictView.tsx`: Interactive EIP-712 structured data inspector, cryptographic recovery verification via `/api/v1/verdicts/verify`.
+  6. `TransactionsView.tsx`: Mined transaction records, block explorer links, live on-chain receipt inspector.
+  7. `AuditView.tsx`: Searchable immutable audit ledger with structured details JSON inspector modal.
+  8. `SecurityView.tsx`: Authorizer key telemetry, smart account governance, and audited emergency token escape hatch with confirmation modal.
+  9. `SettingsView.tsx`: Supported EVM chains, live RPC latency ping, contract registry with copyable addresses.
+- [x] Added automated frontend test suite in `frontend/tests/` running via `node --test` (7/7 tests passing in 174ms).
+- [x] Next.js Turbopack production build verified: **0 errors, 0 warnings, clean static optimization**.
+- [x] Updated master test runner `scripts/test.ps1` to include frontend automated tests and build verification.
 
 ---
 
 ## 4. Documentation Index
 
+- [UI/UX & Frontend Audit](file:///e:/MandateGuard/docs/ui-ux-audit.md)
 - [Gap Analysis & Security Audit](file:///e:/MandateGuard/docs/gap-analysis.md)
 - [System Architecture](file:///e:/MandateGuard/docs/architecture.md)
 - [Security & Trust Model](file:///e:/MandateGuard/docs/security-model.md)
 - [Threat Model & STRIDE Analysis](file:///e:/MandateGuard/docs/threat-model.md)
 - [Data Flow & Lifecycle State Machine](file:///e:/MandateGuard/docs/data-flow.md)
 - [EIP-712 Signed Verdict Specification](file:///e:/MandateGuard/docs/signed-verdict-spec.md)
+- [Production Readiness Scorecard](file:///e:/MandateGuard/docs/production-readiness.md)
+- [Operations & Key Management](file:///e:/MandateGuard/docs/operations.md)
+
 - [Backend API Specification](file:///e:/MandateGuard/docs/api.md)
 - [Production Readiness Review](file:///e:/MandateGuard/docs/production-readiness.md)
 - [Operations & Incident Runbooks](file:///e:/MandateGuard/docs/operations.md)

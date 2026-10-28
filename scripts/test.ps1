@@ -26,12 +26,26 @@ try {
 }
 
 # 3. End-to-End Integration Tests on Live Chain
-Write-Host "`n[3/3] Running Live End-to-End Integration Suite..." -ForegroundColor Yellow
+Write-Host "`n[3/4] Running Live End-to-End Integration Suite..." -ForegroundColor Yellow
 try {
     & ".\backend\.venv\Scripts\python.exe" scripts/test_e2e.py
     Write-Host "[+] End-to-End tests passed successfully." -ForegroundColor Green
 } catch {
     Write-Host "[-] End-to-End tests failed!" -ForegroundColor Red
+    exit 1
+}
+
+# 4. Frontend Unit Tests & Production Build Verification
+Write-Host "`n[4/4] Running Frontend Automated Tests & Build Verification..." -ForegroundColor Yellow
+try {
+    Push-Location frontend
+    npm test
+    npm run build
+    Pop-Location
+    Write-Host "[+] Frontend tests and production build passed successfully." -ForegroundColor Green
+} catch {
+    Pop-Location
+    Write-Host "[-] Frontend verification failed!" -ForegroundColor Red
     exit 1
 }
 
