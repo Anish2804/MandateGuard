@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   LayoutDashboard,
   Bot,
@@ -17,23 +17,30 @@ import {
   Menu,
   X,
   ChevronDown,
-  ExternalLink,
-  PlusCircle,
+  Search,
+  Sun,
+  Moon,
+  Laptop,
   Copy,
   Check,
+  LogOut,
+  Sparkles,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "../ui/Button";
-import { StatusBeacon } from "../ui/StatusBeacon";
-import { SUPPORTED_CHAINS, FACTORY_ADDRESS } from "../../lib/contracts";
+import { Badge } from "../ui/Badge";
+import { CommandPalette } from "../ui/CommandPalette";
+import { useTheme, Theme } from "../theme/ThemeProvider";
+import { SUPPORTED_CHAINS } from "../../lib/contracts";
 
 export type NavRoute =
   | "overview"
-  | "agents"
-  | "mandates"
   | "requests"
-  | "verdict"
   | "transactions"
   | "audit"
+  | "agents"
+  | "mandates"
+  | "verdict"
   | "security"
   | "settings";
 
@@ -43,6 +50,7 @@ export interface AppShellProps {
   walletAddress: `0x${string}` | null;
   walletChainId: number | null;
   onConnectWallet: () => void;
+  onDisconnectWallet?: () => void;
   userSmartAccounts: `0x${string}`[];
   activeSmartAccount: string;
   onSelectSmartAccount: (account: string) => void;
@@ -60,6 +68,9 @@ export interface AppShellProps {
     pendingRequests?: number;
     activeAgents?: number;
   };
+  onOpenCreateMandate?: () => void;
+  onOpenProvisionAgent?: () => void;
+  onOpenSimulator?: () => void;
   children: React.ReactNode;
 }
 
@@ -69,6 +80,7 @@ export function AppShell({
   walletAddress,
   walletChainId,
   onConnectWallet,
+  onDisconnectWallet,
   userSmartAccounts,
   activeSmartAccount,
   onSelectSmartAccount,
@@ -82,469 +94,585 @@ export function AppShell({
   rpcHealthy,
   smartAccountBalance,
   counts = {},
+  onOpenCreateMandate,
+  onOpenProvisionAgent,
+  onOpenSimulator,
   children,
 }: AppShellProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
+  const [walletDropdownOpen, setWalletDropdownOpen] = useState(false);
+  const [networkDropdownOpen, setNetworkDropdownOpen] = useState(false);
+  const [themeDropdownOpen, setThemeDropdownOpen] = useState(false);
+  const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [copiedAccount, setCopiedAccount] = useState(false);
 
-  const navItems: {
-    route: NavRoute;
-    label: string;
-    icon: React.ReactNode;
-    badge?: number;
+  const { theme, resolvedTheme, setTheme } = useTheme();
+
+  // Global Cmd+K / Ctrl+K listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setCmdPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const navSections: {
+    title: string;
+    items: {
+      route: NavRoute;
+      label: string;
+      icon: React.ReactNode;
+      badge?: number;
+    }[];
   }[] = [
     {
-      route: "overview",
-      label: "Overview",
-      icon: <LayoutDashboard className="w-4 h-4" aria-hidden="true" />,
+      title: "Monitor",
+      items: [
+        {
+          route: "overview",
+          label: "Overview",
+          icon: <LayoutDashboard className="w-4 h-4 shrink-0" aria-hidden="true" />,
+        },
+        {
+          route: "requests",
+          label: "Payment Requests",
+          icon: <ArrowRightLeft className="w-4 h-4 shrink-0" aria-hidden="true" />,
+          badge: counts.pendingRequests,
+        },
+        {
+          route: "transactions",
+          label: "Transactions",
+          icon: <Receipt className="w-4 h-4 shrink-0" aria-hidden="true" />,
+        },
+        {
+          route: "audit",
+          label: "Audit Trail",
+          icon: <History className="w-4 h-4 shrink-0" aria-hidden="true" />,
+        },
+      ],
     },
     {
-      route: "agents",
-      label: "Agents",
-      icon: <Bot className="w-4 h-4" aria-hidden="true" />,
-      badge: counts.activeAgents,
+      title: "Configure",
+      items: [
+        {
+          route: "agents",
+          label: "Agents",
+          icon: <Bot className="w-4 h-4 shrink-0" aria-hidden="true" />,
+          badge: counts.activeAgents,
+        },
+        {
+          route: "mandates",
+          label: "Mandates & Policies",
+          icon: <FileCheck2 className="w-4 h-4 shrink-0" aria-hidden="true" />,
+          badge: counts.activeMandates,
+        },
+      ],
     },
     {
-      route: "mandates",
-      label: "Mandates & Policies",
-      icon: <FileCheck2 className="w-4 h-4" aria-hidden="true" />,
-      badge: counts.activeMandates,
+      title: "Security",
+      items: [
+        {
+          route: "verdict",
+          label: "Verdict Verification",
+          icon: <ShieldCheck className="w-4 h-4 shrink-0" aria-hidden="true" />,
+        },
+        {
+          route: "security",
+          label: "Signers & Security",
+          icon: <Lock className="w-4 h-4 shrink-0" aria-hidden="true" />,
+        },
+      ],
     },
     {
-      route: "requests",
-      label: "Payment Requests",
-      icon: <ArrowRightLeft className="w-4 h-4" aria-hidden="true" />,
-      badge: counts.pendingRequests,
-    },
-    {
-      route: "verdict",
-      label: "Verdict Verification",
-      icon: <ShieldCheck className="w-4 h-4" aria-hidden="true" />,
-    },
-    {
-      route: "transactions",
-      label: "Transactions",
-      icon: <Receipt className="w-4 h-4" aria-hidden="true" />,
-    },
-    {
-      route: "audit",
-      label: "Audit Trail",
-      icon: <History className="w-4 h-4" aria-hidden="true" />,
-    },
-    {
-      route: "security",
-      label: "Signers & Security",
-      icon: <Lock className="w-4 h-4" aria-hidden="true" />,
-    },
-    {
-      route: "settings",
-      label: "Networks & Settings",
-      icon: <Network className="w-4 h-4" aria-hidden="true" />,
+      title: "System",
+      items: [
+        {
+          route: "settings",
+          label: "Networks & Settings",
+          icon: <Network className="w-4 h-4 shrink-0" aria-hidden="true" />,
+        },
+      ],
     },
   ];
 
-  const pageDescriptions: Record<NavRoute, { title: string; desc: string }> = {
+  const pageMeta: Record<NavRoute, { title: string; desc: string }> = {
     overview: {
-      title: "Security Console Overview",
-      desc: "Live cryptographic authorization posture, spending utilization, and system telemetry.",
-    },
-    agents: {
-      title: "Agent Management",
-      desc: "Provision isolated API keys, bind agents to smart accounts, and enforce spending rules.",
-    },
-    mandates: {
-      title: "Mandates & Policies",
-      desc: "Define, activate, and manage verifiable human spending boundaries and recipient rules.",
+      title: "Overview",
+      desc: "Spending utilization, active policies, and agent payment activity.",
     },
     requests: {
       title: "Payment Requests",
-      desc: "Audit authorization decisions, policy allowance checks, and lifecycle states.",
+      desc: "Authorization decisions evaluated against active spending mandates.",
+    },
+    transactions: {
+      title: "Transactions",
+      desc: "Reconciled on-chain token transfers settled via guarded smart accounts.",
+    },
+    audit: {
+      title: "Audit Trail",
+      desc: "Immutable chronological log of mandate and authorization security events.",
+    },
+    agents: {
+      title: "Agents",
+      desc: "Provisioned agent API keys locked to isolated smart accounts.",
+    },
+    mandates: {
+      title: "Mandates & Policies",
+      desc: "Spending boundaries, transaction ceilings, and recipient whitelists.",
     },
     verdict: {
       title: "Verdict Verification",
-      desc: "Cryptographic EIP-712 structured data inspector and authorizer signature validation.",
-    },
-    transactions: {
-      title: "Settled Transactions",
-      desc: "Mined blockchain transactions, execution receipts, and PaymentExecuted event logs.",
-    },
-    audit: {
-      title: "Immutable Audit Trail",
-      desc: "Chronological security event ledger recorded for compliance and forensic analysis.",
+      desc: "Cryptographic EIP-712 structured data recovery and signer validation.",
     },
     security: {
-      title: "Signers & Security Controls",
-      desc: "Authorizer signer key validation, owner controls, and emergency withdrawal safeguards.",
+      title: "Signers & Security",
+      desc: "Authorizer key configuration, governance parameters, and emergency controls.",
     },
     settings: {
-      title: "Networks & Connectivity",
-      desc: "Supported EVM chains, RPC latency metrics, and deployed contract addresses.",
+      title: "Networks & Settings",
+      desc: "EVM network endpoints, RPC latency, and verified contract addresses.",
     },
   };
 
-  const handleCopyAccount = () => {
-    if (activeSmartAccount) {
-      navigator.clipboard.writeText(activeSmartAccount);
-      setCopiedAccount(true);
-      setTimeout(() => setCopiedAccount(false), 2000);
-    }
-  };
-
-  const activeChainConfig =
+  const activeChain =
     SUPPORTED_CHAINS[walletChainId as keyof typeof SUPPORTED_CHAINS] ||
     SUPPORTED_CHAINS[31337];
 
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedAccount(true);
+    setTimeout(() => setCopiedAccount(false), 1500);
+  };
+
   return (
-    <div className="min-h-screen bg-[#070a12] text-slate-100 flex flex-col antialiased">
-      {/* Top Header Bar */}
-      <header className="sticky top-0 z-40 bg-[#0a0f1d]/90 border-b border-slate-800/80 backdrop-blur-md px-4 lg:px-6 py-3 flex items-center justify-between gap-4">
-        {/* Left: Mobile Toggle & Brand */}
+    <div className="min-h-screen bg-[var(--canvas)] text-[var(--text)] flex flex-col font-sans antialiased">
+      {/* Top Bar */}
+      <header className="sticky top-0 z-40 bg-[var(--surface)] border-b border-[var(--border)] h-12 px-4 lg:px-6 flex items-center justify-between gap-3">
+        {/* Left: Mobile Toggle + Breadcrumb */}
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="p-2 lg:hidden text-slate-400 hover:text-white rounded-lg hover:bg-slate-800/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-            aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+            className="p-1 lg:hidden text-[var(--text-muted)] hover:text-[var(--text)] rounded hover:bg-[var(--surface-hover)]"
+            aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
           >
-            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
           </button>
 
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shadow-sm shadow-indigo-950">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="font-bold text-base text-white tracking-tight flex items-center gap-1.5">
-                Mandate<span className="text-indigo-400">Guard</span>
-                <span className="text-[10px] uppercase font-mono px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-800/50">
-                  Console
-                </span>
-              </span>
-            </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-[var(--text)] tracking-tight">
+              MandateGuard
+            </span>
+            <span className="text-[var(--text-subtle)] text-xs">/</span>
+            <span className="text-xs text-[var(--text-muted)] font-medium">
+              {pageMeta[currentRoute].title}
+            </span>
           </div>
         </div>
 
-        {/* Center: Smart Account Selector */}
-        <div className="hidden md:flex items-center gap-2">
+        {/* Right: Actions, Search, Network, Account, Theme */}
+        <div className="flex items-center gap-2">
+          {/* Quick Search (Cmd+K) */}
+          <button
+            type="button"
+            onClick={() => setCmdPaletteOpen(true)}
+            className="hidden sm:flex items-center gap-2 px-2.5 py-1 text-xs text-[var(--text-muted)] bg-[var(--surface-hover)] border border-[var(--border)] rounded hover:border-[var(--border-strong)] transition-colors"
+          >
+            <Search className="w-3.5 h-3.5" />
+            <span>Search...</span>
+            <kbd className="text-[10px] text-[var(--text-subtle)] font-mono bg-[var(--surface)] border border-[var(--border)] px-1 py-0.2 rounded">
+              ⌘K
+            </kbd>
+          </button>
+
+          {/* Network Switcher & Testnet Badge */}
           <div className="relative">
             <button
               type="button"
-              id="account-selector-btn"
-              onClick={() => setAccountDropdownOpen(!accountDropdownOpen)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 hover:border-slate-700 text-xs font-mono text-slate-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              onClick={() => setNetworkDropdownOpen(!networkDropdownOpen)}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-[var(--text)] bg-[var(--surface)] border border-[var(--border)] rounded hover:bg-[var(--surface-hover)] transition-colors"
               aria-haspopup="true"
-              aria-expanded={accountDropdownOpen}
+              aria-expanded={networkDropdownOpen}
             >
-              <span className="text-slate-400 font-sans">Account:</span>
-              <span className="text-indigo-300 font-semibold">
-                {activeSmartAccount
-                  ? `${activeSmartAccount.slice(0, 6)}...${activeSmartAccount.slice(-4)}`
-                  : "No Account Selected"}
-              </span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  rpcHealthy ? "bg-[var(--success)]" : "bg-[var(--danger)]"
+                }`}
+              />
+              <span className="font-medium text-xs">{activeChain.name}</span>
+              <Badge variant="neutral" size="sm" showIcon={false} className="hidden md:inline-flex text-[10px] py-0 px-1">
+                Testnet
+              </Badge>
+              <ChevronDown className="w-3 h-3 text-[var(--text-muted)]" />
             </button>
 
-            {accountDropdownOpen && (
+            {networkDropdownOpen && (
               <div
-                className="absolute left-0 mt-1.5 w-80 rounded-xl bg-slate-900 border border-slate-800 shadow-2xl p-2 z-50 animate-in fade-in duration-100"
+                className="absolute right-0 mt-1 w-52 bg-[var(--surface)] border border-[var(--border)] rounded-md shadow-lg p-1 z-50 animate-in fade-in duration-100"
                 role="menu"
-                aria-orientation="vertical"
               >
-                <div className="px-3 py-2 border-b border-slate-800/80">
-                  <span className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">
-                    Active Smart Account
+                <div className="px-2.5 py-1.5 text-[10px] uppercase font-semibold text-[var(--text-subtle)] tracking-wider">
+                  Supported Networks
+                </div>
+                {Object.values(SUPPORTED_CHAINS).map((chain) => (
+                  <button
+                    key={chain.id}
+                    type="button"
+                    onClick={() => {
+                      setNetworkDropdownOpen(false);
+                      onRouteChange("settings");
+                    }}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 text-xs rounded text-left transition-colors ${
+                      chain.id === activeChain.id
+                        ? "bg-[var(--accent-subtle)] text-[var(--accent-text)] font-medium"
+                        : "text-[var(--text)] hover:bg-[var(--surface-hover)]"
+                    }`}
+                  >
+                    <span>{chain.name}</span>
+                    <span className="font-mono text-[10px] text-[var(--text-subtle)]">
+                      {chain.id}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Wallet & Account Menu */}
+          <div className="relative">
+            {walletAddress ? (
+              <button
+                type="button"
+                onClick={() => setWalletDropdownOpen(!walletDropdownOpen)}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono text-[var(--text)] bg-[var(--surface)] border border-[var(--border)] rounded hover:bg-[var(--surface-hover)] transition-colors"
+                aria-haspopup="true"
+                aria-expanded={walletDropdownOpen}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--success)]" />
+                <span>{`${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`}</span>
+                <ChevronDown className="w-3 h-3 text-[var(--text-muted)]" />
+              </button>
+            ) : (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={onConnectWallet}
+                leftIcon={<Wallet className="w-3.5 h-3.5" />}
+              >
+                Connect Wallet
+              </Button>
+            )}
+
+            {walletDropdownOpen && walletAddress && (
+              <div
+                className="absolute right-0 mt-1 w-72 bg-[var(--surface)] border border-[var(--border)] rounded-md shadow-lg p-2 z-50 animate-in fade-in duration-100 text-xs"
+                role="menu"
+              >
+                <div className="px-2 py-1.5 border-b border-[var(--border)]">
+                  <span className="text-[10px] uppercase font-semibold text-[var(--text-subtle)] block">
+                    Connected Wallet
                   </span>
-                  <div className="flex items-center justify-between mt-1">
-                    <span className="text-xs font-mono text-slate-200 truncate">
-                      {activeSmartAccount}
+                  <div className="flex items-center justify-between mt-0.5">
+                    <span className="font-mono text-[11px] text-[var(--text)] truncate">
+                      {walletAddress}
                     </span>
                     <button
                       type="button"
-                      onClick={handleCopyAccount}
-                      className="p-1 hover:text-indigo-400 text-slate-400 rounded transition-colors"
+                      onClick={() => handleCopy(walletAddress)}
+                      className="p-1 text-[var(--text-muted)] hover:text-[var(--text)] rounded"
                       title="Copy Address"
                     >
                       {copiedAccount ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <Check className="w-3 h-3 text-[var(--success-text)]" />
                       ) : (
-                        <Copy className="w-3.5 h-3.5" />
+                        <Copy className="w-3 h-3" />
                       )}
                     </button>
                   </div>
-                  {smartAccountBalance !== null ? (
-                    <div className="text-xs text-slate-300 mt-1.5 flex items-center justify-between">
-                      <span className="text-slate-400">Vault Balance:</span>
-                      <span className="font-semibold text-emerald-400 font-mono">
-                        ${smartAccountBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="text-xs text-amber-400/90 mt-1 flex items-center justify-between">
-                      <span>Vault Balance:</span>
-                      <span className="italic font-mono">RPC Offline</span>
-                    </div>
-                  )}
                 </div>
 
-                {userSmartAccounts.length > 0 && (
-                  <div className="py-1">
-                    <span className="px-3 py-1 text-[10px] uppercase text-slate-400 block font-medium">
-                      Your Deployed Accounts ({userSmartAccounts.length})
+                <div className="px-2 py-2 border-b border-[var(--border)] space-y-1">
+                  <div className="flex justify-between items-center text-[11px]">
+                    <span className="text-[var(--text-muted)]">Active Smart Account:</span>
+                    <span className="font-mono text-[var(--text)]">
+                      {`${activeSmartAccount.slice(0, 6)}...${activeSmartAccount.slice(-4)}`}
                     </span>
-                    {userSmartAccounts.map((acc) => (
-                      <button
-                        key={acc}
-                        type="button"
-                        onClick={() => {
-                          onSelectSmartAccount(acc);
-                          setAccountDropdownOpen(false);
-                        }}
-                        className={`w-full text-left px-3 py-1.5 text-xs font-mono rounded-lg transition-colors flex items-center justify-between ${
-                          acc.toLowerCase() === activeSmartAccount.toLowerCase()
-                            ? "bg-indigo-950/60 text-indigo-300 border border-indigo-800/40"
-                            : "text-slate-300 hover:bg-slate-800/60"
-                        }`}
-                      >
-                        <span>{`${acc.slice(0, 10)}...${acc.slice(-6)}`}</span>
-                        {acc.toLowerCase() === activeSmartAccount.toLowerCase() && (
-                          <span className="text-[10px] text-indigo-400 font-sans">Active</span>
-                        )}
-                      </button>
-                    ))}
                   </div>
-                )}
+                  <div className="flex justify-between items-center text-[11px]">
+                    <span className="text-[var(--text-muted)]">Vault Balance:</span>
+                    <span className="font-mono font-medium text-[var(--success-text)] tabular-nums">
+                      {smartAccountBalance !== null
+                        ? `$${smartAccountBalance.toFixed(2)} USDC`
+                        : "RPC Offline"}
+                    </span>
+                  </div>
+                </div>
 
-                <div className="pt-2 border-t border-slate-800/80">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full text-xs justify-center"
-                    loading={isDeployingAccount}
+                <div className="pt-1.5 space-y-1">
+                  <button
+                    type="button"
                     onClick={() => {
-                      setAccountDropdownOpen(false);
-                      onDeploySmartAccount();
+                      setWalletDropdownOpen(false);
+                      onClaimFaucet();
                     }}
-                    leftIcon={<PlusCircle className="w-3.5 h-3.5" />}
+                    disabled={isClaimingFaucet}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-[var(--text)] hover:bg-[var(--surface-hover)] rounded transition-colors text-left"
                   >
-                    Deploy New Account via Factory
-                  </Button>
+                    <Droplets className="w-3.5 h-3.5 text-[var(--info-text)]" />
+                    <span>Claim 1,000 Testnet USDC</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWalletDropdownOpen(false);
+                      onRefresh();
+                    }}
+                    disabled={isRefreshing}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-[var(--text)] hover:bg-[var(--surface-hover)] rounded transition-colors text-left"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 text-[var(--text-muted)] ${isRefreshing ? "animate-spin" : ""}`} />
+                    <span>Refresh Telemetry</span>
+                  </button>
+
+                  {onDisconnectWallet && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWalletDropdownOpen(false);
+                        onDisconnectWallet();
+                      }}
+                      className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-[var(--danger-text)] hover:bg-[var(--surface-hover)] rounded transition-colors text-left border-t border-[var(--border)] mt-1 pt-1.5"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Disconnect Wallet</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}
           </div>
-        </div>
 
-        {/* Right: Actions & Wallet */}
-        <div className="flex items-center gap-2.5">
-          {/* Faucet Claim */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onClaimFaucet}
-            loading={isClaimingFaucet}
-            leftIcon={<Droplets className="w-3.5 h-3.5 text-blue-400" />}
-            title="Claim 1,000 testnet USDC from MockUSDC"
-            className="hidden sm:inline-flex"
-          >
-            Claim Faucet
-          </Button>
-
-          {/* Refresh State */}
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={isRefreshing}
-            className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-            aria-label="Refresh data"
-            title="Refresh application state"
-          >
-            <RefreshCw
-              className={`w-4 h-4 ${isRefreshing ? "animate-spin text-indigo-400" : ""}`}
-            />
-          </button>
-
-          {/* Network Pill */}
-          <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 text-xs">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                rpcHealthy ? "bg-emerald-400" : "bg-rose-400"
-              }`}
-            />
-            <span className="text-slate-300 font-medium">{activeChainConfig.name}</span>
-          </div>
-
-          {/* Web3 Wallet Connect */}
-          {walletAddress ? (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-950/40 border border-indigo-800/60 text-xs font-mono text-indigo-300">
-              <span className="w-2 h-2 rounded-full bg-emerald-400" />
-              <span>{`${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`}</span>
-            </div>
-          ) : (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={onConnectWallet}
-              leftIcon={<Wallet className="w-3.5 h-3.5" />}
+          {/* Theme Toggle (Light / Dark / System) */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setThemeDropdownOpen(!themeDropdownOpen)}
+              className="p-1.5 text-[var(--text-muted)] hover:text-[var(--text)] bg-[var(--surface)] border border-[var(--border)] rounded hover:bg-[var(--surface-hover)] transition-colors"
+              aria-label="Toggle color theme"
+              title={`Current theme: ${theme}`}
             >
-              Connect Wallet
-            </Button>
-          )}
+              {resolvedTheme === "dark" ? (
+                <Moon className="w-3.5 h-3.5" />
+              ) : (
+                <Sun className="w-3.5 h-3.5" />
+              )}
+            </button>
+
+            {themeDropdownOpen && (
+              <div
+                className="absolute right-0 mt-1 w-32 bg-[var(--surface)] border border-[var(--border)] rounded-md shadow-lg p-1 z-50 animate-in fade-in duration-100 text-xs"
+                role="menu"
+              >
+                {(
+                  [
+                    { id: "light", label: "Light", icon: <Sun className="w-3 h-3" /> },
+                    { id: "dark", label: "Dark", icon: <Moon className="w-3 h-3" /> },
+                    { id: "system", label: "System", icon: <Laptop className="w-3 h-3" /> },
+                  ] as const
+                ).map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      setTheme(t.id);
+                      setThemeDropdownOpen(false);
+                    }}
+                    className={`w-full flex items-center gap-2 px-2 py-1 rounded text-xs transition-colors ${
+                      theme === t.id
+                        ? "bg-[var(--accent-subtle)] text-[var(--accent-text)] font-medium"
+                        : "text-[var(--text)] hover:bg-[var(--surface-hover)]"
+                    }`}
+                  >
+                    {t.icon}
+                    <span>{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
-      {/* Main Body with Sidebar */}
+      {/* Main Body */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Desktop Sidebar Navigation */}
+        {/* Left Sidebar (240px) */}
         <aside
-          className="hidden lg:flex w-64 flex-col justify-between border-r border-slate-800/80 bg-[#090d18] shrink-0 p-4"
+          className="hidden lg:flex w-60 flex-col justify-between border-r border-[var(--border)] bg-[var(--surface)] shrink-0 p-3"
           aria-label="Sidebar navigation"
         >
-          <nav className="space-y-1" aria-label="Console views">
-            {navItems.map((item) => {
-              const isActive = currentRoute === item.route;
-              return (
-                <button
-                  key={item.route}
-                  type="button"
-                  id={`nav-${item.route}`}
-                  onClick={() => onRouteChange(item.route)}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 select-none ${
-                    isActive
-                      ? "bg-indigo-600 text-white shadow-md shadow-indigo-950/50"
-                      : "text-slate-400 hover:text-slate-100 hover:bg-slate-800/60"
-                  }`}
-                  aria-current={isActive ? "page" : undefined}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className={isActive ? "text-white" : "text-slate-400"}>
-                      {item.icon}
-                    </span>
-                    <span>{item.label}</span>
-                  </div>
-                  {item.badge !== undefined && item.badge > 0 && (
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded-full font-mono ${
-                        isActive
-                          ? "bg-indigo-700/80 text-white"
-                          : "bg-slate-800 text-slate-300 border border-slate-700"
-                      }`}
-                    >
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
+          <div className="space-y-4">
+            {navSections.map((sec) => (
+              <div key={sec.title} className="space-y-1">
+                <span className="px-2.5 text-[10px] uppercase font-semibold text-[var(--text-subtle)] tracking-wider">
+                  {sec.title}
+                </span>
+                <nav className="space-y-0.5">
+                  {sec.items.map((item) => {
+                    const isActive = currentRoute === item.route;
+                    return (
+                      <button
+                        key={item.route}
+                        type="button"
+                        id={`nav-${item.route}`}
+                        onClick={() => onRouteChange(item.route)}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded text-xs transition-colors select-none ${
+                          isActive
+                            ? "bg-[var(--accent-subtle)] text-[var(--accent-text)] font-semibold"
+                            : "text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]"
+                        }`}
+                        aria-current={isActive ? "page" : undefined}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          {item.icon}
+                          <span>{item.label}</span>
+                        </div>
+                        {item.badge !== undefined && item.badge > 0 && (
+                          <span
+                            className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                              isActive
+                                ? "bg-[var(--accent)] text-white"
+                                : "bg-[var(--surface-hover)] text-[var(--text-muted)]"
+                            }`}
+                          >
+                            {item.badge}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </nav>
+              </div>
+            ))}
+          </div>
 
-          {/* Connectivity Status in Sidebar Footer */}
-          <div className="pt-4 border-t border-slate-800/80 space-y-2 text-xs">
-            <div className="flex items-center justify-between px-2">
-              <span className="text-slate-400">Backend API</span>
-              <StatusBeacon
-                status={backendHealthy ? "online" : "offline"}
-                label={backendHealthy ? "Operational" : "Offline"}
-                size="sm"
+          {/* Compact Sidebar Footer: System Status Dots with Tooltips */}
+          <div className="pt-3 border-t border-[var(--border)] flex items-center justify-between px-2 text-[11px] text-[var(--text-muted)]">
+            <div className="flex items-center gap-1.5" title={backendHealthy ? "Backend API Operational" : "Backend API Offline"}>
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  backendHealthy ? "bg-[var(--success)]" : "bg-[var(--danger)]"
+                }`}
               />
+              <span className="text-[10px] font-mono">API</span>
             </div>
-            <div className="flex items-center justify-between px-2">
-              <span className="text-slate-400">EVM RPC ({activeChainConfig.id})</span>
-              <StatusBeacon
-                status={rpcHealthy ? "online" : "offline"}
-                label={rpcHealthy ? "Connected" : "Disconnected"}
-                size="sm"
+
+            <div className="flex items-center gap-1.5" title={rpcHealthy ? "EVM RPC Connected" : "EVM RPC Offline"}>
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  rpcHealthy ? "bg-[var(--success)]" : "bg-[var(--danger)]"
+                }`}
               />
+              <span className="text-[10px] font-mono">RPC ({activeChain.id})</span>
             </div>
           </div>
         </aside>
 
-        {/* Mobile Navigation Drawer */}
+        {/* Mobile Drawer Navigation */}
         {mobileMenuOpen && (
           <div
-            className="fixed inset-0 z-50 bg-black/80 lg:hidden backdrop-blur-sm"
+            className="fixed inset-0 z-50 bg-black/50 lg:hidden backdrop-blur-xs"
             onClick={() => setMobileMenuOpen(false)}
           >
             <div
-              className="w-72 bg-[#090d18] h-full p-4 border-r border-slate-800 flex flex-col justify-between"
+              className="w-64 bg-[var(--surface)] h-full p-4 border-r border-[var(--border)] flex flex-col justify-between animate-in slide-in-from-left duration-150"
               onClick={(e) => e.stopPropagation()}
             >
-              <div>
-                <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-                  <span className="font-bold text-white">Menu</span>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-[var(--border)]">
+                  <span className="font-semibold text-xs text-[var(--text)]">Navigation</span>
                   <button
                     type="button"
                     onClick={() => setMobileMenuOpen(false)}
-                    className="p-1 text-slate-400 hover:text-white"
+                    className="p-1 text-[var(--text-muted)] hover:text-[var(--text)]"
                   >
-                    <X className="w-5 h-5" />
+                    <X className="w-4 h-4" />
                   </button>
                 </div>
-                <nav className="mt-4 space-y-1">
-                  {navItems.map((item) => (
-                    <button
-                      key={item.route}
-                      type="button"
-                      onClick={() => {
-                        onRouteChange(item.route);
-                        setMobileMenuOpen(false);
-                      }}
-                      className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium ${
-                        currentRoute === item.route
-                          ? "bg-indigo-600 text-white"
-                          : "text-slate-400 hover:text-slate-100 hover:bg-slate-800/60"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        {item.icon}
-                        <span>{item.label}</span>
-                      </div>
-                      {item.badge !== undefined && item.badge > 0 && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
-                          {item.badge}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </nav>
-              </div>
 
-              <div className="pt-4 border-t border-slate-800 text-xs space-y-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full justify-center"
-                  onClick={onClaimFaucet}
-                  loading={isClaimingFaucet}
-                  leftIcon={<Droplets className="w-3.5 h-3.5 text-blue-400" />}
-                >
-                  Claim 1,000 USDC Faucet
-                </Button>
+                {navSections.map((sec) => (
+                  <div key={sec.title} className="space-y-1">
+                    <span className="px-2 text-[10px] uppercase font-semibold text-[var(--text-subtle)] tracking-wider">
+                      {sec.title}
+                    </span>
+                    <nav className="space-y-0.5">
+                      {sec.items.map((item) => (
+                        <button
+                          key={item.route}
+                          type="button"
+                          onClick={() => {
+                            onRouteChange(item.route);
+                            setMobileMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs ${
+                            currentRoute === item.route
+                              ? "bg-[var(--accent-subtle)] text-[var(--accent-text)] font-semibold"
+                              : "text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            {item.icon}
+                            <span>{item.label}</span>
+                          </div>
+                          {item.badge !== undefined && item.badge > 0 && (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-[var(--surface-hover)] text-[var(--text-muted)]">
+                              {item.badge}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </nav>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
         )}
 
         {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-8" id="main-content">
-          <div className="max-w-7xl mx-auto space-y-6">
-            {/* Contextual Page Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-slate-800/60">
+        <main className="flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-6" id="main-content">
+          <div className="max-w-6xl mx-auto space-y-5">
+            {/* Standard Page Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-[var(--border)]">
               <div>
-                <h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">
-                  {pageDescriptions[currentRoute].title}
+                <h1 className="text-lg md:text-xl font-semibold text-[var(--text)] tracking-tight">
+                  {pageMeta[currentRoute].title}
                 </h1>
-                <p className="text-xs md:text-sm text-slate-400 mt-1">
-                  {pageDescriptions[currentRoute].desc}
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                  {pageMeta[currentRoute].desc}
                 </p>
               </div>
             </div>
 
-            {/* Child View */}
+            {/* View Content */}
             {children}
           </div>
         </main>
       </div>
+
+      {/* Global Command Palette Dialog */}
+      <CommandPalette
+        isOpen={cmdPaletteOpen}
+        onClose={() => setCmdPaletteOpen(false)}
+        onNavigate={onRouteChange}
+        onOpenCreateMandate={onOpenCreateMandate}
+        onOpenProvisionAgent={onOpenProvisionAgent}
+        onOpenSimulator={onOpenSimulator}
+      />
     </div>
   );
 }

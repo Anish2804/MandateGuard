@@ -10,7 +10,7 @@ export interface ModalProps {
   description?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
-  size?: "sm" | "md" | "lg" | "xl";
+  size?: "sm" | "md" | "lg";
   id?: string;
 }
 
@@ -30,14 +30,12 @@ export function Modal({
   const titleId = `${id}-title`;
   const descId = description ? `${id}-desc` : undefined;
 
-  // Handle ESC key
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
         onClose();
       } else if (e.key === "Tab") {
-        // Focus trap
         if (!dialogRef.current) return;
         const focusableElements = dialogRef.current.querySelectorAll<HTMLElement>(
           'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -65,7 +63,6 @@ export function Modal({
       document.body.style.overflow = "hidden";
       window.addEventListener("keydown", handleKeyDown);
 
-      // Focus the dialog container or first focusable element
       setTimeout(() => {
         if (dialogRef.current) {
           const firstFocusable = dialogRef.current.querySelector<HTMLElement>(
@@ -95,17 +92,15 @@ export function Modal({
   if (!isOpen) return null;
 
   const sizeClasses = {
-    sm: "max-w-md",
-    md: "max-w-lg",
-    lg: "max-w-2xl",
-    xl: "max-w-4xl",
+    sm: "max-w-sm",
+    md: "max-w-md",
+    lg: "max-w-xl",
   }[size];
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto bg-black/75 backdrop-blur-sm animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-100"
       onClick={(e) => {
-        // Light dismiss on backdrop click
         if (e.target === e.currentTarget) {
           onClose();
         }
@@ -119,16 +114,16 @@ export function Modal({
         aria-labelledby={titleId}
         aria-describedby={descId}
         tabIndex={-1}
-        className={`w-full ${sizeClasses} bg-slate-900 border border-slate-800 rounded-xl shadow-2xl shadow-black/60 flex flex-col my-8 focus:outline-none`}
+        className={`w-full ${sizeClasses} bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-xl flex flex-col focus:outline-none animate-in zoom-in-95 duration-150`}
       >
         {/* Header */}
-        <div className="flex items-start justify-between px-6 py-5 border-b border-slate-800/80">
+        <div className="flex items-start justify-between px-5 py-4 border-b border-[var(--border)] shrink-0">
           <div>
-            <h2 id={titleId} className="text-lg font-semibold text-slate-100 tracking-tight">
+            <h2 id={titleId} className="text-sm font-semibold text-[var(--text)] tracking-tight">
               {title}
             </h2>
             {description && (
-              <p id={descId} className="text-xs text-slate-400 mt-1">
+              <p id={descId} className="text-xs text-[var(--text-muted)] mt-0.5">
                 {description}
               </p>
             )}
@@ -136,21 +131,21 @@ export function Modal({
           <button
             type="button"
             onClick={onClose}
-            className="p-1 text-slate-400 hover:text-slate-100 rounded-lg hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            className="p-1 text-[var(--text-muted)] hover:text-[var(--text)] rounded hover:bg-[var(--surface-hover)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
             aria-label="Close dialog"
           >
-            <X className="w-5 h-5" aria-hidden="true" />
+            <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
 
         {/* Body */}
-        <div className="px-6 py-5 overflow-y-auto max-h-[calc(85vh-150px)] text-sm text-slate-300 space-y-4">
+        <div className="px-5 py-4 overflow-y-auto max-h-[calc(85vh-130px)] text-xs text-[var(--text)] space-y-3.5">
           {children}
         </div>
 
         {/* Footer */}
         {footer && (
-          <div className="px-6 py-4 border-t border-slate-800/80 bg-slate-950/40 rounded-b-xl flex items-center justify-end gap-3">
+          <div className="px-5 py-3 border-t border-[var(--border)] bg-[var(--surface-hover)] rounded-b-lg flex items-center justify-end gap-2.5 shrink-0">
             {footer}
           </div>
         )}

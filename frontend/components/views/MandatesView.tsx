@@ -4,26 +4,27 @@ import React, { useState } from "react";
 import {
   FileCheck2,
   PlusCircle,
-  Copy,
+  Search,
+  Filter,
   Check,
   Clock,
   Coins,
   ShieldAlert,
   ArrowRight,
-  ExternalLink,
-  Search,
-  Filter,
-  CheckCircle2,
-  AlertTriangle,
-  Send,
   Layers,
+  Trash2,
+  AlertTriangle,
+  ChevronRight,
+  CheckCircle2,
+  Info,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
-import { Modal } from "../ui/Modal";
+import { Drawer } from "../ui/Drawer";
+import { AddressChip } from "../ui/AddressChip";
+import { EmptyState } from "../ui/EmptyState";
 import { Mandate, MOCK_USDC_ADDR } from "../../lib/api";
-import { SUPPORTED_CHAINS } from "../../lib/contracts";
 
 export interface MandatesViewProps {
   mandates: Mandate[];
@@ -44,6 +45,8 @@ export interface MandatesViewProps {
   onRevokeMandate: (mandateId: string) => Promise<Mandate>;
   onRegisterOnChain: (mandate: Mandate) => Promise<string>;
   onRevokeOnChain: (mandateId: string) => Promise<string>;
+  isCreateOpen?: boolean;
+  onCloseCreate?: () => void;
 }
 
 export function MandatesView({
@@ -56,14 +59,16 @@ export function MandatesView({
   onRevokeMandate,
   onRegisterOnChain,
   onRevokeOnChain,
+  isCreateOpen = false,
+  onCloseCreate,
 }: MandatesViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "revoked" | "exhausted">("all");
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [step, setStep] = useState<"form" | "review">("form");
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "exhausted" | "revoked">("all");
+  const [selectedMandate, setSelectedMandate] = useState<Mandate | null>(null);
+  const [showCreateDrawer, setShowCreateDrawer] = useState(isCreateOpen);
 
-  // Form State adhering to Sections A-F
+  // Stepper State: 1 (Basics) -> 2 (Limits) -> 3 (Recipients) -> 4 (Review)
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
   const [form, setForm] = useState({
     title: "",
     agent: "",
@@ -86,24 +91,21 @@ export function MandatesView({
     if (!matchesSearch) return false;
     if (statusFilter === "all") return true;
     if (statusFilter === "active") return !m.is_revoked && m.remaining_budget > 0;
-    if (statusFilter === "revoked") return m.is_revoked;
     if (statusFilter === "exhausted") return !m.is_revoked && m.remaining_budget <= 0;
+    if (statusFilter === "revoked") return m.is_revoked;
     return true;
   });
 
-  const handleCopy = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
   const handleRevoke = async (mandateId: string, title: string) => {
-    if (!confirm(`Are you sure you want to revoke mandate "${title}"? Any future payment requests matching this mandate will be denied.`)) {
+    if (!confirm(`Revoke policy "${title}"? Any subsequent payment requests under this mandate will be denied.`)) {
       return;
     }
     setActionLoadingId(mandateId);
     try {
       await onRevokeMandate(mandateId);
+      if (selectedMandate?.id === mandateId) {
+        setSelectedMandate(null);
+      }
       onRefresh();
     } catch (err: any) {
       alert(`Revocation failed: ${err.message}`);
@@ -112,15 +114,15 @@ export function MandatesView({
     }
   };
 
-  const handleRegisterOnChainClick = async (mandate: Mandate) => {
+  const handleSyncOnChain = async (mandate: Mandate) => {
     if (!walletAddress) {
-      alert("Please connect your Web3 wallet first to sign the on-chain registration transaction.");
+      alert("Please connect your Web3 wallet to sign the on-chain registration transaction.");
       return;
     }
     setActionLoadingId(`onchain-${mandate.id}`);
     try {
       const txHash = await onRegisterOnChain(mandate);
-      alert(`On-chain registration submitted! Transaction Hash: ${txHash}`);
+      alert(`Policy registered on-chain. Tx: ${txHash}`);
       onRefresh();
     } catch (err: any) {
       alert(`On-chain registration failed: ${err.message}`);
@@ -129,16 +131,7 @@ export function MandatesView({
     }
   };
 
-  const handleSubmitForm = async () => {
-    if (!form.title.trim() || !form.agent.trim()) {
-      alert("Please provide a title and agent address");
-      return;
-    }
-    if (form.max_amount_per_tx > form.max_cumulative_amount) {
-      alert("Per-transaction limit cannot exceed cumulative spending limit");
-      return;
-    }
-
+  const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
       const currentTimestamp = Math.floor(Date.now() / 1000);
@@ -155,8 +148,9 @@ export function MandatesView({
         expiry: expiryTimestamp,
       });
 
-      setShowCreateModal(false);
-      setStep("form");
+      setShowCreateDrawer(false);
+      if (onCloseCreate) onCloseCreate();
+      setCurrentStep(1);
       setForm({
         title: "",
         agent: "",
@@ -175,34 +169,34 @@ export function MandatesView({
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header and Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex flex-1 items-center gap-3 max-w-lg">
+    <div className="space-y-4">
+      {/* Top Filter Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex flex-1 items-center gap-2 max-w-md">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
             <input
               type="text"
-              placeholder="Search by title, ID, or agent address..."
+              placeholder="Filter by title, ID, or agent address..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-4 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full bg-[var(--surface)] border border-[var(--border)] rounded pl-8 pr-3 py-1.5 text-xs text-[var(--text)] placeholder-[var(--text-subtle)] focus:outline-none focus:border-[var(--border-strong)]"
             />
           </div>
 
-          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1 text-xs">
-            {(["all", "active", "exhausted", "revoked"] as const).map((status) => (
+          <div className="flex items-center gap-1 bg-[var(--surface)] border border-[var(--border)] rounded p-0.5 text-xs">
+            {(["all", "active", "exhausted", "revoked"] as const).map((s) => (
               <button
-                key={status}
+                key={s}
                 type="button"
-                onClick={() => setStatusFilter(status)}
-                className={`px-2.5 py-1 rounded-md capitalize font-medium transition-colors ${
-                  statusFilter === status
-                    ? "bg-indigo-600 text-white"
-                    : "text-slate-400 hover:text-slate-200"
+                onClick={() => setStatusFilter(s)}
+                className={`px-2 py-0.5 rounded capitalize text-[11px] font-medium transition-colors ${
+                  statusFilter === s
+                    ? "bg-[var(--surface-hover)] text-[var(--text)] shadow-xs"
+                    : "text-[var(--text-muted)] hover:text-[var(--text)]"
                 }`}
               >
-                {status}
+                {s}
               </button>
             ))}
           </div>
@@ -210,386 +204,501 @@ export function MandatesView({
 
         <Button
           variant="primary"
+          size="sm"
           onClick={() => {
-            setStep("form");
-            setShowCreateModal(true);
+            setCurrentStep(1);
+            setShowCreateDrawer(true);
           }}
-          leftIcon={<PlusCircle className="w-4 h-4" />}
+          leftIcon={<PlusCircle className="w-3.5 h-3.5" />}
         >
-          Create Mandate Policy
+          Create mandate
         </Button>
       </div>
 
-      {/* Mandate List */}
-      {filteredMandates.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center space-y-3">
-            <FileCheck2 className="w-10 h-10 text-slate-600 mx-auto" />
-            <h3 className="text-sm font-semibold text-slate-300">No mandate policies matching criteria</h3>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              Mandate policies establish verifiable human bounds (per-transaction ceilings, cumulative caps, recipient whitelists) enforced by the cryptographic signing service.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setStep("form");
-                setShowCreateModal(true);
-              }}
-            >
-              Define First Mandate
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredMandates.map((m) => {
-            const isExhausted = !m.is_revoked && m.remaining_budget <= 0;
-            const isRevoked = m.is_revoked;
-            const spentPercent = m.max_cumulative_amount > 0 ? (m.current_spent / m.max_cumulative_amount) * 100 : 0;
-            const reservedPercent = m.max_cumulative_amount > 0 ? (m.reserved_amount / m.max_cumulative_amount) * 100 : 0;
+      {/* Main Table */}
+      <Card>
+        <CardContent className="p-0">
+          {filteredMandates.length === 0 ? (
+            <EmptyState
+              icon={<FileCheck2 className="w-4 h-4" />}
+              title="No spending mandates found"
+              description="Define spending limits and recipient boundaries for autonomous agents."
+              action={
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    setCurrentStep(1);
+                    setShowCreateDrawer(true);
+                  }}
+                >
+                  Create mandate
+                </Button>
+              }
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs" aria-label="Mandate policies table">
+                <thead className="bg-[var(--surface-hover)] border-b border-[var(--border)] text-[var(--text-muted)] font-medium">
+                  <tr>
+                    <th scope="col" className="px-4 py-2.5">Policy</th>
+                    <th scope="col" className="px-4 py-2.5">Agent</th>
+                    <th scope="col" className="px-4 py-2.5">Per-tx / Cap</th>
+                    <th scope="col" className="px-4 py-2.5">Budget progress</th>
+                    <th scope="col" className="px-4 py-2.5">Status</th>
+                    <th scope="col" className="px-4 py-2.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border)]">
+                  {filteredMandates.map((m) => {
+                    const isRevoked = m.is_revoked;
+                    const isExhausted = !m.is_revoked && m.remaining_budget <= 0;
+                    const spentPct = m.max_cumulative_amount > 0 ? (m.current_spent / m.max_cumulative_amount) * 100 : 0;
 
-            return (
-              <Card key={m.id} className="flex flex-col justify-between" hoverEffect>
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <CardTitle className="text-base truncate">{m.title}</CardTitle>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <span className="text-[11px] font-mono text-slate-400">
-                          {`${m.id.slice(0, 10)}...${m.id.slice(-6)}`}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleCopy(m.id, m.id)}
-                          className="p-0.5 text-slate-500 hover:text-indigo-400"
-                          title="Copy Mandate ID"
-                        >
-                          {copiedId === m.id ? (
-                            <Check className="w-3 h-3 text-emerald-400" />
+                    return (
+                      <tr
+                        key={m.id}
+                        onClick={() => setSelectedMandate(m)}
+                        className="hover:bg-[var(--surface-hover)] transition-colors cursor-pointer"
+                      >
+                        <td className="px-4 py-2.5">
+                          <div className="font-medium text-[var(--text)] tracking-tight">
+                            {m.title}
+                          </div>
+                          <div className="mt-0.5">
+                            <AddressChip address={m.id} truncateLength={4} />
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-2.5">
+                          <AddressChip address={m.agent} truncateLength={4} />
+                        </td>
+
+                        <td className="px-4 py-2.5 font-mono tabular-nums">
+                          <span className="font-semibold text-[var(--text)]">${m.max_amount_per_tx}</span>
+                          <span className="text-[var(--text-muted)]"> / ${m.max_cumulative_amount} USDC</span>
+                        </td>
+
+                        <td className="px-4 py-2.5">
+                          <div className="w-32 space-y-1 font-mono text-[10px] tabular-nums">
+                            <div className="flex justify-between text-[var(--text-muted)]">
+                              <span>${m.current_spent.toFixed(0)} spent</span>
+                              <span>${m.remaining_budget.toFixed(0)} left</span>
+                            </div>
+                            <div className="w-full bg-[var(--surface-hover)] border border-[var(--border)] rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="bg-[var(--accent)] h-full transition-all"
+                                style={{ width: `${Math.min(spentPct, 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-2.5">
+                          {isRevoked ? (
+                            <Badge variant="danger" size="sm">Revoked</Badge>
+                          ) : isExhausted ? (
+                            <Badge variant="warning" size="sm">Exhausted</Badge>
                           ) : (
-                            <Copy className="w-3 h-3" />
+                            <Badge variant="success" size="sm">Active (v{m.version})</Badge>
                           )}
-                        </button>
-                      </div>
-                    </div>
-                    {isRevoked ? (
-                      <Badge variant="revoked" size="sm">Revoked</Badge>
-                    ) : isExhausted ? (
-                      <Badge variant="exhausted" size="sm">Exhausted</Badge>
-                    ) : (
-                      <Badge variant="active" size="sm">Active (v{m.version})</Badge>
-                    )}
-                  </div>
-                </CardHeader>
+                        </td>
 
-                <CardContent className="space-y-4 py-3">
-                  {/* Budget Allocation Bar */}
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between text-xs font-mono">
-                      <span className="text-slate-400">Spent: ${m.current_spent.toFixed(2)}</span>
-                      <span className="text-slate-200 font-semibold">
-                        Cap: ${m.max_cumulative_amount.toFixed(2)} USDC
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden flex">
-                      <div
-                        className="bg-indigo-500 h-full transition-all"
-                        style={{ width: `${Math.min(spentPercent, 100)}%` }}
-                      />
-                      <div
-                        className="bg-amber-500 h-full transition-all"
-                        style={{ width: `${Math.min(reservedPercent, 100)}%` }}
-                      />
-                    </div>
-                    <div className="flex justify-between text-[11px] text-slate-400 font-mono">
-                      <span>Per-Tx Max: ${m.max_amount_per_tx.toFixed(2)}</span>
-                      <span className="text-emerald-400 font-semibold">
-                        Available: ${m.remaining_budget.toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
+                        <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-[11px] h-7 px-2"
+                              onClick={() => setSelectedMandate(m)}
+                            >
+                              Details
+                            </Button>
+                            {!isRevoked && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-[var(--danger-text)] hover:bg-[var(--danger-subtle)] text-[11px] h-7 px-2"
+                                loading={actionLoadingId === m.id}
+                                onClick={() => handleRevoke(m.id, m.title)}
+                              >
+                                Revoke
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-                  {/* Attributes Details */}
-                  <div className="p-2.5 rounded-lg bg-slate-950/40 border border-slate-800/40 text-xs space-y-1.5 font-mono">
-                    <div className="flex justify-between items-center text-slate-400">
-                      <span>Agent:</span>
-                      <span className="text-indigo-300 font-medium truncate max-w-[150px]">
-                        {`${m.agent.slice(0, 8)}...${m.agent.slice(-6)}`}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center text-slate-400">
-                      <span>Recipient:</span>
-                      <span className="text-slate-200 truncate max-w-[150px]">
-                        {m.recipient ? `${m.recipient.slice(0, 8)}...${m.recipient.slice(-6)}` : "Any Recipient"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center text-slate-400">
-                      <span>Expires:</span>
-                      <span className="text-slate-300">
-                        {new Date(m.expiry * 1000).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                </CardContent>
+      {/* Row Detail Drawer */}
+      <Drawer
+        isOpen={!!selectedMandate}
+        onClose={() => setSelectedMandate(null)}
+        title={selectedMandate?.title || "Policy details"}
+        description={selectedMandate ? `Mandate ID: ${selectedMandate.id}` : ""}
+        width="md"
+        footer={
+          selectedMandate && (
+            <div className="flex items-center justify-between w-full">
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={actionLoadingId === `onchain-${selectedMandate.id}`}
+                onClick={() => handleSyncOnChain(selectedMandate)}
+                leftIcon={<Layers className="w-3.5 h-3.5" />}
+              >
+                Sync on-chain
+              </Button>
 
-                {/* Card Actions */}
-                <div className="p-3 border-t border-slate-800/60 bg-slate-950/30 flex items-center justify-between gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-xs"
-                    loading={actionLoadingId === `onchain-${m.id}`}
-                    onClick={() => handleRegisterOnChainClick(m)}
-                    leftIcon={<Layers className="w-3.5 h-3.5 text-indigo-400" />}
-                    title="Register policy parameters on-chain in MandateGuardAccount"
-                  >
-                    Sync On-Chain
-                  </Button>
+              {!selectedMandate.is_revoked && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  loading={actionLoadingId === selectedMandate.id}
+                  onClick={() => handleRevoke(selectedMandate.id, selectedMandate.title)}
+                  leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+                >
+                  Revoke policy
+                </Button>
+              )}
+            </div>
+          )
+        }
+      >
+        {selectedMandate && (
+          <div className="space-y-4">
+            {/* Status overview */}
+            <div className="p-3 rounded bg-[var(--surface-hover)] border border-[var(--border)] flex items-center justify-between">
+              <span className="text-xs text-[var(--text-muted)]">Policy status</span>
+              {selectedMandate.is_revoked ? (
+                <Badge variant="danger" size="md">Revoked</Badge>
+              ) : selectedMandate.remaining_budget <= 0 ? (
+                <Badge variant="warning" size="md">Exhausted</Badge>
+              ) : (
+                <Badge variant="success" size="md">Active (Version {selectedMandate.version})</Badge>
+              )}
+            </div>
 
-                  {!isRevoked && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 text-xs"
-                      loading={actionLoadingId === m.id}
-                      onClick={() => handleRevoke(m.id, m.title)}
-                    >
-                      Revoke Policy
-                    </Button>
+            {/* Budget Breakdown */}
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-[var(--text)] block">Budget allocation</span>
+              <div className="p-3 rounded bg-[var(--surface)] border border-[var(--border)] space-y-2">
+                <div className="flex justify-between font-mono text-xs tabular-nums">
+                  <span className="text-[var(--text-muted)]">Spent: ${selectedMandate.current_spent.toFixed(2)}</span>
+                  <span className="font-semibold text-[var(--text)]">Limit: ${selectedMandate.max_cumulative_amount.toFixed(2)} USDC</span>
+                </div>
+                <div className="w-full bg-[var(--surface-hover)] border border-[var(--border)] rounded-full h-2 overflow-hidden flex">
+                  <div
+                    className="bg-[var(--accent)] h-full"
+                    style={{
+                      width: `${(selectedMandate.current_spent / selectedMandate.max_cumulative_amount) * 100}%`,
+                    }}
+                  />
+                  <div
+                    className="bg-[var(--warning)] h-full"
+                    style={{
+                      width: `${(selectedMandate.reserved_amount / selectedMandate.max_cumulative_amount) * 100}%`,
+                    }}
+                  />
+                </div>
+                <div className="flex justify-between text-[11px] text-[var(--text-muted)] font-mono">
+                  <span>Reserved: ${selectedMandate.reserved_amount.toFixed(2)}</span>
+                  <span className="text-[var(--success-text)] font-medium">Available: ${selectedMandate.remaining_budget.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Parameters list */}
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-[var(--text)] block">Policy rules</span>
+              <div className="p-3 rounded bg-[var(--surface)] border border-[var(--border)] space-y-2 text-xs">
+                <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
+                  <span className="text-[var(--text-muted)]">Per-tx ceiling:</span>
+                  <span className="font-mono font-semibold text-[var(--text)]">${selectedMandate.max_amount_per_tx.toFixed(2)} USDC</span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
+                  <span className="text-[var(--text-muted)]">Authorized agent:</span>
+                  <AddressChip address={selectedMandate.agent} truncateLength={6} />
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
+                  <span className="text-[var(--text-muted)]">Allowed destination:</span>
+                  {selectedMandate.recipient ? (
+                    <AddressChip address={selectedMandate.recipient} truncateLength={6} />
+                  ) : (
+                    <span className="text-[var(--text)]">Any recipient</span>
                   )}
                 </div>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Guided 7-Step Mandate Creation Modal (A to G) */}
-      <Modal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        title={step === "form" ? "Create New Mandate Policy" : "Review & Activate Mandate"}
-        description={
-          step === "form"
-            ? "Configure human-approved payment boundaries according to sections A through F."
-            : "Section G: Explicitly review policy boundaries before cryptographic activation."
-        }
-        size="lg"
-      >
-        {step === "form" ? (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              setStep("review");
-            }}
-            className="space-y-4"
-          >
-            {/* Section A: Agent and Account */}
-            <div className="space-y-3 pb-3 border-b border-slate-800/80">
-              <span className="text-xs font-semibold text-indigo-400 uppercase tracking-wider block font-mono">
-                Section A: Agent & Smart Account
-              </span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label htmlFor="form-title" className="text-xs text-slate-300 block font-medium">
-                    Policy Title <span className="text-rose-400">*</span>
-                  </label>
-                  <input
-                    id="form-title"
-                    type="text"
-                    required
-                    placeholder="e.g. Travel Booking Allowance"
-                    value={form.title}
-                    onChange={(e) => setForm({ ...form, title: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+                <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
+                  <span className="text-[var(--text-muted)]">Smart account:</span>
+                  <AddressChip address={selectedMandate.account} truncateLength={6} />
                 </div>
-
-                <div className="space-y-1">
-                  <label htmlFor="form-agent" className="text-xs text-slate-300 block font-medium">
-                    Agent Address <span className="text-rose-400">*</span>
-                  </label>
-                  <input
-                    id="form-agent"
-                    type="text"
-                    required
-                    placeholder="0x..."
-                    value={form.agent}
-                    onChange={(e) => setForm({ ...form, agent: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Section B & C: Network, Token & Approved Recipients */}
-            <div className="space-y-3 pb-3 border-b border-slate-800/80">
-              <span className="text-xs font-semibold text-indigo-400 uppercase tracking-wider block font-mono">
-                Section B & C: Token & Recipient Rules
-              </span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs text-slate-400 block font-medium">Payment Token</label>
-                  <div className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-xs font-mono text-slate-300 flex items-center justify-between">
-                    <span>Mock USDC (6 Decimals)</span>
-                    <span className="text-[10px] text-indigo-400 font-semibold">Verified</span>
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label htmlFor="form-recipient" className="text-xs text-slate-300 block font-medium">
-                    Approved Recipient
-                  </label>
-                  <input
-                    id="form-recipient"
-                    type="text"
-                    disabled={form.allowAnyRecipient}
-                    placeholder={form.allowAnyRecipient ? "Any recipient permitted within budget" : "0x..."}
-                    value={form.recipient}
-                    onChange={(e) => setForm({ ...form, recipient: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 placeholder-slate-500 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                  <div className="flex items-center gap-2 pt-1">
-                    <input
-                      id="form-any-recip"
-                      type="checkbox"
-                      checked={form.allowAnyRecipient}
-                      onChange={(e) => setForm({ ...form, allowAnyRecipient: e.target.checked })}
-                      className="rounded border-slate-800 text-indigo-600 focus:ring-indigo-500"
-                    />
-                    <label htmlFor="form-any-recip" className="text-[11px] text-slate-400 cursor-pointer">
-                      Allow any recipient (enforced by per-tx and cumulative limits)
-                    </label>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Section D, E & F: Limits and Expiry */}
-            <div className="space-y-3 pb-3 border-b border-slate-800/80">
-              <span className="text-xs font-semibold text-indigo-400 uppercase tracking-wider block font-mono">
-                Section D, E & F: Limits & Expiration
-              </span>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="space-y-1">
-                  <label htmlFor="form-tx-limit" className="text-xs text-slate-300 block font-medium">
-                    Max Per Transaction (USDC)
-                  </label>
-                  <input
-                    id="form-tx-limit"
-                    type="number"
-                    min="1"
-                    required
-                    value={form.max_amount_per_tx}
-                    onChange={(e) => setForm({ ...form, max_amount_per_tx: Number(e.target.value) })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label htmlFor="form-cum-limit" className="text-xs text-slate-300 block font-medium">
-                    Cumulative Cap (USDC)
-                  </label>
-                  <input
-                    id="form-cum-limit"
-                    type="number"
-                    min="1"
-                    required
-                    value={form.max_cumulative_amount}
-                    onChange={(e) => setForm({ ...form, max_cumulative_amount: Number(e.target.value) })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label htmlFor="form-expiry" className="text-xs text-slate-300 block font-medium">
-                    Duration (Days)
-                  </label>
-                  <input
-                    id="form-expiry"
-                    type="number"
-                    min="1"
-                    max="365"
-                    required
-                    value={form.expiryDays}
-                    onChange={(e) => setForm({ ...form, expiryDays: Number(e.target.value) })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-2 flex justify-end gap-3">
-              <Button variant="outline" onClick={() => setShowCreateModal(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" variant="primary" rightIcon={<ArrowRight className="w-4 h-4" />}>
-                Proceed to Review (Section G)
-              </Button>
-            </div>
-          </form>
-        ) : (
-          /* Section G: Review and Confirmation */
-          <div className="space-y-4">
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3 text-xs">
-              <div className="flex justify-between items-center pb-2 border-b border-slate-800">
-                <span className="text-slate-400">Policy Title:</span>
-                <span className="font-semibold text-slate-100">{form.title}</span>
-              </div>
-              <div className="flex justify-between items-center pb-2 border-b border-slate-800 font-mono">
-                <span className="text-slate-400 font-sans">Smart Account:</span>
-                <span className="text-indigo-300">{`${activeSmartAccount.slice(0, 10)}...${activeSmartAccount.slice(-6)}`}</span>
-              </div>
-              <div className="flex justify-between items-center pb-2 border-b border-slate-800 font-mono">
-                <span className="text-slate-400 font-sans">Authorized Agent:</span>
-                <span className="text-slate-200">{form.agent}</span>
-              </div>
-              <div className="flex justify-between items-center pb-2 border-b border-slate-800 font-mono">
-                <span className="text-slate-400 font-sans">Approved Destination:</span>
-                <span className="text-slate-200">
-                  {form.allowAnyRecipient ? "Any recipient permitted" : form.recipient}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-3 pt-1">
-                <div className="p-2 rounded bg-slate-900 border border-slate-800">
-                  <span className="text-[11px] text-slate-400 block font-sans">Per-Tx Ceiling:</span>
-                  <span className="text-sm font-bold font-mono text-emerald-400">
-                    ${form.max_amount_per_tx} USDC
-                  </span>
-                </div>
-                <div className="p-2 rounded bg-slate-900 border border-slate-800">
-                  <span className="text-[11px] text-slate-400 block font-sans">Total Cumulative Cap:</span>
-                  <span className="text-sm font-bold font-mono text-indigo-400">
-                    ${form.max_cumulative_amount} USDC
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-[var(--text-muted)]">Expiry timestamp:</span>
+                  <span className="font-mono text-[var(--text)]">
+                    {new Date(selectedMandate.expiry * 1000).toLocaleString()}
                   </span>
                 </div>
               </div>
-            </div>
-
-            <div className="p-3 rounded-lg bg-indigo-950/40 border border-indigo-600/30 text-indigo-300 text-xs flex items-start gap-2">
-              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>
-                Activating this mandate records it in the MandateGuard policy engine. You may also sync it on-chain to the smart account contract after creation.
-              </span>
-            </div>
-
-            <div className="pt-2 flex justify-between gap-3">
-              <Button variant="outline" onClick={() => setStep("form")}>
-                Back to Edit
-              </Button>
-              <Button
-                variant="primary"
-                loading={isSubmitting}
-                onClick={handleSubmitForm}
-                leftIcon={<CheckCircle2 className="w-4 h-4" />}
-              >
-                Activate Mandate Policy
-              </Button>
             </div>
           </div>
         )}
-      </Modal>
+      </Drawer>
+
+      {/* Create Mandate Stepper Drawer */}
+      <Drawer
+        isOpen={showCreateDrawer}
+        onClose={() => {
+          setShowCreateDrawer(false);
+          if (onCloseCreate) onCloseCreate();
+        }}
+        title="Create mandate policy"
+        description="Configure spending limits, ceilings, and recipient rules for autonomous agents."
+        width="md"
+        footer={
+          <div className="flex items-center justify-between w-full">
+            {currentStep > 1 ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setCurrentStep((prev) => (prev - 1) as any)}
+              >
+                Back
+              </Button>
+            ) : <span />}
+
+            {currentStep < 4 ? (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  if (currentStep === 1 && (!form.title.trim() || !form.agent.trim())) {
+                    alert("Please provide a title and agent address.");
+                    return;
+                  }
+                  if (currentStep === 2 && form.max_amount_per_tx > form.max_cumulative_amount) {
+                    alert("Per-transaction limit cannot exceed cumulative spending limit.");
+                    return;
+                  }
+                  setCurrentStep((prev) => (prev + 1) as any);
+                }}
+                rightIcon={<ArrowRight className="w-3.5 h-3.5" />}
+              >
+                Next: {currentStep === 1 ? "Limits" : currentStep === 2 ? "Recipients" : "Review"}
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                size="sm"
+                loading={isSubmitting}
+                onClick={handleSubmit}
+                leftIcon={<Check className="w-3.5 h-3.5" />}
+              >
+                Activate mandate
+              </Button>
+            )}
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          {/* Stepper Progress */}
+          <div className="flex items-center justify-between pb-3 border-b border-[var(--border)] text-[11px] font-medium text-[var(--text-muted)]">
+            {[
+              { num: 1, label: "Basics" },
+              { num: 2, label: "Limits" },
+              { num: 3, label: "Recipients" },
+              { num: 4, label: "Review" },
+            ].map((s) => (
+              <div
+                key={s.num}
+                className={`flex items-center gap-1.5 ${
+                  currentStep === s.num
+                    ? "text-[var(--accent-text)] font-semibold"
+                    : currentStep > s.num
+                    ? "text-[var(--text)]"
+                    : "text-[var(--text-subtle)]"
+                }`}
+              >
+                <span
+                  className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${
+                    currentStep === s.num
+                      ? "bg-[var(--accent)] text-white"
+                      : currentStep > s.num
+                      ? "bg-[var(--surface-hover)] border border-[var(--border)]"
+                      : "bg-[var(--surface-hover)] text-[var(--text-subtle)]"
+                  }`}
+                >
+                  {s.num}
+                </span>
+                <span>{s.label}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Step 1: Basics */}
+          {currentStep === 1 && (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label htmlFor="m-title" className="text-xs font-medium text-[var(--text)] block">
+                  Policy title <span className="text-[var(--danger-text)]">*</span>
+                </label>
+                <input
+                  id="m-title"
+                  type="text"
+                  required
+                  placeholder="e.g. Server Infrastructure Allowance"
+                  value={form.title}
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-3 py-1.5 text-xs text-[var(--text)] placeholder-[var(--text-subtle)] focus:outline-none focus:border-[var(--border-strong)]"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label htmlFor="m-agent" className="text-xs font-medium text-[var(--text)] block">
+                  Authorized agent address <span className="text-[var(--danger-text)]">*</span>
+                </label>
+                <input
+                  id="m-agent"
+                  type="text"
+                  required
+                  placeholder="0x..."
+                  value={form.agent}
+                  onChange={(e) => setForm({ ...form, agent: e.target.value })}
+                  className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-3 py-1.5 text-xs font-mono text-[var(--text)] placeholder-[var(--text-subtle)] focus:outline-none focus:border-[var(--border-strong)]"
+                />
+              </div>
+
+              <div className="p-2.5 rounded bg-[var(--surface-hover)] border border-[var(--border)] text-xs text-[var(--text-muted)] space-y-1">
+                <span className="font-semibold text-[var(--text)] block">Account isolation</span>
+                <span>This mandate will bind exclusively to smart account <code>{activeSmartAccount.slice(0, 8)}...</code>.</span>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Limits */}
+          {currentStep === 2 && (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label htmlFor="m-tx-limit" className="text-xs font-medium text-[var(--text)] block">
+                  Per-transaction limit (USDC)
+                </label>
+                <input
+                  id="m-tx-limit"
+                  type="number"
+                  min="1"
+                  required
+                  value={form.max_amount_per_tx}
+                  onChange={(e) => setForm({ ...form, max_amount_per_tx: Number(e.target.value) })}
+                  className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-3 py-1.5 text-xs font-mono tabular-nums text-[var(--text)] focus:outline-none focus:border-[var(--border-strong)]"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label htmlFor="m-cum-limit" className="text-xs font-medium text-[var(--text)] block">
+                  Cumulative spending cap (USDC)
+                </label>
+                <input
+                  id="m-cum-limit"
+                  type="number"
+                  min="1"
+                  required
+                  value={form.max_cumulative_amount}
+                  onChange={(e) => setForm({ ...form, max_cumulative_amount: Number(e.target.value) })}
+                  className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-3 py-1.5 text-xs font-mono tabular-nums text-[var(--text)] focus:outline-none focus:border-[var(--border-strong)]"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label htmlFor="m-expiry" className="text-xs font-medium text-[var(--text)] block">
+                  Validity duration (days)
+                </label>
+                <input
+                  id="m-expiry"
+                  type="number"
+                  min="1"
+                  max="365"
+                  required
+                  value={form.expiryDays}
+                  onChange={(e) => setForm({ ...form, expiryDays: Number(e.target.value) })}
+                  className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-3 py-1.5 text-xs font-mono tabular-nums text-[var(--text)] focus:outline-none focus:border-[var(--border-strong)]"
+                />
+              </div>
+
+              {form.max_amount_per_tx > form.max_cumulative_amount && (
+                <div className="p-2 rounded bg-[var(--danger-subtle)] border border-[var(--danger-border)] text-xs text-[var(--danger-text)]">
+                  Per-transaction limit cannot exceed cumulative spending cap.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step 3: Recipients */}
+          {currentStep === 3 && (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label htmlFor="m-recipient" className="text-xs font-medium text-[var(--text)] block">
+                  Approved recipient address
+                </label>
+                <input
+                  id="m-recipient"
+                  type="text"
+                  disabled={form.allowAnyRecipient}
+                  placeholder={form.allowAnyRecipient ? "Any recipient permitted within budget" : "0x..."}
+                  value={form.recipient}
+                  onChange={(e) => setForm({ ...form, recipient: e.target.value })}
+                  className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-3 py-1.5 text-xs font-mono text-[var(--text)] placeholder-[var(--text-subtle)] disabled:opacity-40 focus:outline-none focus:border-[var(--border-strong)]"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  id="m-any-recip"
+                  type="checkbox"
+                  checked={form.allowAnyRecipient}
+                  onChange={(e) => setForm({ ...form, allowAnyRecipient: e.target.checked })}
+                  className="rounded border-[var(--border)] text-[var(--accent)]"
+                />
+                <label htmlFor="m-any-recip" className="text-xs text-[var(--text)] cursor-pointer select-none">
+                  Allow any recipient within budget bounds
+                </label>
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: Review */}
+          {currentStep === 4 && (
+            <div className="space-y-3">
+              <div className="p-3 rounded bg-[var(--surface-hover)] border border-[var(--border)] text-xs space-y-2">
+                <span className="font-semibold text-[var(--text)] block">Human-readable policy summary:</span>
+                <p className="leading-relaxed text-[var(--text)]">
+                  Agent <strong className="font-mono">{form.agent.slice(0, 8)}...</strong> can spend up to{" "}
+                  <strong className="font-mono text-[var(--success-text)]">${form.max_cumulative_amount}.00 USDC</strong> total, with a maximum of{" "}
+                  <strong className="font-mono">${form.max_amount_per_tx}.00 USDC</strong> per payment,{" "}
+                  {form.allowAnyRecipient ? (
+                    "payable to any recipient"
+                  ) : (
+                    <span>only to recipient <strong className="font-mono">{form.recipient.slice(0, 8)}...</strong></span>
+                  )}
+                  , valid for {form.expiryDays} days.
+                </p>
+              </div>
+
+              <div className="p-2.5 rounded bg-[var(--info-subtle)] border border-[var(--info-border)] text-xs text-[var(--info-text)] flex items-start gap-2">
+                <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>
+                  Activating records this policy in the MandateGuard engine. You can also sync it directly on-chain on your smart account.
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      </Drawer>
     </div>
   );
 }

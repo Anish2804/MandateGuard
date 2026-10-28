@@ -8,20 +8,20 @@ import {
   Clock,
   Play,
   Send,
-  Copy,
-  Check,
-  ShieldCheck,
-  ShieldAlert,
-  Coins,
   Search,
   ExternalLink,
-  Receipt,
-  FileCheck2,
+  ChevronDown,
+  ChevronRight,
+  ShieldCheck,
+  Coins,
+  Check,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
-import { Modal } from "../ui/Modal";
+import { Drawer } from "../ui/Drawer";
+import { AddressChip } from "../ui/AddressChip";
+import { EmptyState } from "../ui/EmptyState";
 import {
   PaymentRequestItem,
   PaymentVerdict,
@@ -32,7 +32,6 @@ import {
   settlePayment,
 } from "../../lib/api";
 import { executePaymentViaWallet } from "../../lib/web3";
-import { SUPPORTED_CHAINS } from "../../lib/contracts";
 
 export interface RequestsViewProps {
   requests: PaymentRequestItem[];
@@ -41,7 +40,9 @@ export interface RequestsViewProps {
   walletAddress: `0x${string}` | null;
   walletChainId: number | null;
   onRefresh: () => void;
-  showToast: (type: "success" | "error" | "info", message: string) => void;
+  showToast: (type: "success" | "error" | "warning" | "info", message: string) => void;
+  isSimulatorOpen?: boolean;
+  onCloseSimulator?: () => void;
 }
 
 export function RequestsView({
@@ -52,12 +53,15 @@ export function RequestsView({
   walletChainId,
   onRefresh,
   showToast,
+  isSimulatorOpen = false,
+  onCloseSimulator,
 }: RequestsViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "allow" | "deny" | "settled">("all");
+  const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null);
 
-  // Simulator Modal State
-  const [showSimulator, setShowSimulator] = useState(false);
+  // Simulator Drawer State
+  const [showSimulator, setShowSimulator] = useState(isSimulatorOpen);
   const [selectedMandateId, setSelectedMandateId] = useState(mandates[0]?.id || "");
   const [recipient, setRecipient] = useState("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC");
   const [amount, setAmount] = useState(25);
@@ -71,10 +75,7 @@ export function RequestsView({
   const [isSettling, setIsSettling] = useState(false);
   const [settledSuccess, setSettledSuccess] = useState(false);
 
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-
   const activeMandates = mandates.filter((m) => !m.is_revoked && m.remaining_budget > 0);
-  const selectedMandate = mandates.find((m) => m.id === selectedMandateId);
 
   const filteredRequests = requests.filter((r) => {
     const matchesSearch =
@@ -90,16 +91,10 @@ export function RequestsView({
     return true;
   });
 
-  const handleCopy = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
   const handleSimulate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedMandateId) {
-      alert("Please select a mandate policy first");
+      alert("Please select a mandate policy first.");
       return;
     }
 
@@ -110,7 +105,7 @@ export function RequestsView({
     setSettledSuccess(false);
 
     try {
-      const idempotencyKey = `sim_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      const idempotencyKey = `req_${Date.now()}_${Math.random().toString(36).substring(7)}`;
       const verdict = await requestAuthorization({
         mandate_id: selectedMandateId,
         account: activeSmartAccount,
@@ -132,11 +127,11 @@ export function RequestsView({
 
   const handleExecuteOnChain = async () => {
     if (!simVerdict || !simVerdict.signature) {
-      alert("No signed verdict available for on-chain execution");
+      alert("No signed verdict available for on-chain execution.");
       return;
     }
     if (!walletAddress) {
-      alert("Please connect your Web3 wallet first to sign the payment transaction");
+      alert("Please connect your Web3 wallet first to sign the payment transaction.");
       return;
     }
 
@@ -163,15 +158,15 @@ export function RequestsView({
       setExecutionTxHash(txHash);
       showToast("success", `Transaction submitted to mempool: ${txHash.slice(0, 10)}...`);
 
-      // Auto-reconcile with backend
+      // Settle with backend
       setIsSettling(true);
       try {
         await settlePayment(simVerdict.authorization_id, txHash);
         setSettledSuccess(true);
-        showToast("success", "Payment reconciled and settled with MandateGuard backend!");
+        showToast("success", "Payment reconciled with MandateGuard backend.");
         onRefresh();
       } catch (settleErr: any) {
-        showToast("error", `Settlement reconciliation warning: ${settleErr.message}`);
+        showToast("error", `Settlement warning: ${settleErr.message}`);
       } finally {
         setIsSettling(false);
       }
@@ -183,31 +178,31 @@ export function RequestsView({
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex flex-1 items-center gap-3 max-w-lg">
+    <div className="space-y-4">
+      {/* Search and Action Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex flex-1 items-center gap-2 max-w-md">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
             <input
               type="text"
-              placeholder="Search requests by ID, mandate, or recipient..."
+              placeholder="Search by request ID, mandate, or recipient..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-4 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full bg-[var(--surface)] border border-[var(--border)] rounded pl-8 pr-3 py-1.5 text-xs text-[var(--text)] placeholder-[var(--text-subtle)] focus:outline-none focus:border-[var(--border-strong)]"
             />
           </div>
 
-          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1 text-xs">
+          <div className="flex items-center gap-1 bg-[var(--surface)] border border-[var(--border)] rounded p-0.5 text-xs">
             {(["all", "allow", "deny", "settled"] as const).map((filter) => (
               <button
                 key={filter}
                 type="button"
                 onClick={() => setStatusFilter(filter)}
-                className={`px-2.5 py-1 rounded-md capitalize font-medium transition-colors ${
+                className={`px-2 py-0.5 rounded capitalize text-[11px] font-medium transition-colors ${
                   statusFilter === filter
-                    ? "bg-indigo-600 text-white"
-                    : "text-slate-400 hover:text-slate-200"
+                    ? "bg-[var(--surface-hover)] text-[var(--text)] shadow-xs"
+                    : "text-[var(--text-muted)] hover:text-[var(--text)]"
                 }`}
               >
                 {filter}
@@ -218,6 +213,7 @@ export function RequestsView({
 
         <Button
           variant="primary"
+          size="sm"
           onClick={() => {
             setSimVerdict(null);
             setSimError(null);
@@ -228,110 +224,139 @@ export function RequestsView({
             }
             setShowSimulator(true);
           }}
-          leftIcon={<Play className="w-4 h-4 text-emerald-400" />}
+          leftIcon={<Play className="w-3.5 h-3.5" />}
         >
-          Simulate Payment Request
+          Simulate payment
         </Button>
       </div>
 
-      {/* Requests Table */}
+      {/* Requests Data Table */}
       <Card>
-        <CardHeader>
-          <CardTitle>Payment Request Evaluation History</CardTitle>
-          <CardDescription>
-            Every request submitted by an autonomous agent is cryptographically evaluated against its assigned mandate rules.
-          </CardDescription>
-        </CardHeader>
         <CardContent className="p-0">
           {filteredRequests.length === 0 ? (
-            <div className="text-center py-12 px-4 space-y-3">
-              <ArrowRightLeft className="w-10 h-10 text-slate-600 mx-auto" />
-              <h3 className="text-sm font-semibold text-slate-300">No payment requests found</h3>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                No requests have been evaluated under the selected criteria. Use the Payment Simulator to trigger and test an agent authorization request.
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setSimVerdict(null);
-                  setShowSimulator(true);
-                }}
-              >
-                Open Payment Simulator
-              </Button>
-            </div>
+            <EmptyState
+              icon={<ArrowRightLeft className="w-4 h-4" />}
+              title="No payment requests found"
+              description="Test an agent authorization request using the payment simulator."
+              action={
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setShowSimulator(true)}
+                >
+                  Simulate payment
+                </Button>
+              }
+            />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-300" aria-label="Payment requests history table">
-                <thead className="bg-slate-950/60 border-b border-slate-800/80 text-slate-400 uppercase font-mono text-[11px]">
+              <table className="w-full text-left text-xs" aria-label="Payment requests history table">
+                <thead className="bg-[var(--surface-hover)] border-b border-[var(--border)] text-[var(--text-muted)] font-medium">
                   <tr>
-                    <th scope="col" className="px-5 py-3">Request ID</th>
-                    <th scope="col" className="px-5 py-3">Mandate</th>
-                    <th scope="col" className="px-5 py-3">Amount</th>
-                    <th scope="col" className="px-5 py-3">Recipient</th>
-                    <th scope="col" className="px-5 py-3">Verdict</th>
-                    <th scope="col" className="px-5 py-3">Lifecycle State</th>
-                    <th scope="col" className="px-5 py-3">Timestamp</th>
+                    <th scope="col" className="w-8 px-3 py-2.5"></th>
+                    <th scope="col" className="px-3 py-2.5">Request ID</th>
+                    <th scope="col" className="px-3 py-2.5">Mandate</th>
+                    <th scope="col" className="px-3 py-2.5">Amount</th>
+                    <th scope="col" className="px-3 py-2.5">Recipient</th>
+                    <th scope="col" className="px-3 py-2.5">Verdict</th>
+                    <th scope="col" className="px-3 py-2.5">Lifecycle state</th>
+                    <th scope="col" className="px-3 py-2.5 text-right">Time</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                <tbody className="divide-y divide-[var(--border)] font-mono text-[11px]">
                   {filteredRequests.map((r) => {
+                    const isExpanded = expandedRequestId === r.id;
                     const isAllowed = r.verdict === 1;
                     const isSettled = r.status === "SETTLED";
 
                     return (
-                      <tr key={r.id} className="hover:bg-slate-800/30 transition-colors">
-                        <td className="px-5 py-3.5 font-semibold text-slate-200">
-                          <span className="flex items-center gap-1.5">
-                            <span>{`${r.id.slice(0, 10)}...`}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleCopy(r.id, r.id)}
-                              className="text-slate-500 hover:text-indigo-400"
-                              title="Copy Request ID"
-                            >
-                              {copiedId === r.id ? (
-                                <Check className="w-3 h-3 text-emerald-400" />
-                              ) : (
-                                <Copy className="w-3 h-3" />
-                              )}
-                            </button>
-                          </span>
-                        </td>
-                        <td className="px-5 py-3.5 text-indigo-300">
-                          {`${r.mandate_id.slice(0, 8)}...${r.mandate_id.slice(-4)}`}
-                        </td>
-                        <td className="px-5 py-3.5 font-bold text-slate-100">
-                          ${r.amount.toFixed(2)} USDC
-                        </td>
-                        <td className="px-5 py-3.5 text-slate-400">
-                          {`${r.recipient.slice(0, 6)}...${r.recipient.slice(-4)}`}
-                        </td>
-                        <td className="px-5 py-3.5">
-                          {isAllowed ? (
-                            <Badge variant="allow" size="sm">ALLOW</Badge>
-                          ) : (
-                            <Badge variant="deny" size="sm">DENY</Badge>
-                          )}
-                        </td>
-                        <td className="px-5 py-3.5">
-                          {isSettled ? (
-                            <Badge variant="settled" size="sm">Settled</Badge>
-                          ) : isAllowed ? (
-                            <span className="inline-flex items-center gap-1 text-indigo-400 font-sans font-medium">
-                              <Clock className="w-3 h-3" /> Authorized (Signed)
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-rose-400 font-sans">
-                              <XCircle className="w-3 h-3" /> Rejected: {r.rejection_reason || "Policy Violation"}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-5 py-3.5 text-slate-500 font-sans">
-                          {r.created_at ? new Date(r.created_at).toLocaleTimeString() : "-"}
-                        </td>
-                      </tr>
+                      <React.Fragment key={r.id}>
+                        <tr
+                          onClick={() => setExpandedRequestId(isExpanded ? null : r.id)}
+                          className="hover:bg-[var(--surface-hover)] transition-colors cursor-pointer"
+                        >
+                          <td className="px-3 py-2.5 text-[var(--text-subtle)]">
+                            {isExpanded ? (
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            ) : (
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <AddressChip address={r.id} truncateLength={4} />
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <AddressChip address={r.mandate_id} truncateLength={4} />
+                          </td>
+                          <td className="px-3 py-2.5 font-bold font-mono tabular-nums text-[var(--text)]">
+                            ${r.amount.toFixed(2)} USDC
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <AddressChip address={r.recipient} truncateLength={4} />
+                          </td>
+                          <td className="px-3 py-2.5 font-sans">
+                            {isAllowed ? (
+                              <Badge variant="allow" size="sm">Allow</Badge>
+                            ) : (
+                              <Badge variant="deny" size="sm">Deny</Badge>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 font-sans">
+                            {isSettled ? (
+                              <span className="text-[var(--success-text)] font-medium inline-flex items-center gap-1">
+                                <Check className="w-3 h-3" /> Settled
+                              </span>
+                            ) : isAllowed ? (
+                              <span className="text-[var(--accent-text)] font-medium inline-flex items-center gap-1">
+                                <Clock className="w-3 h-3" /> Authorized
+                              </span>
+                            ) : (
+                              <span className="text-[var(--danger-text)] truncate max-w-xs block">
+                                Denied: {r.rejection_reason || "Rule violation"}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-right text-[var(--text-muted)] font-sans">
+                            {r.created_at ? new Date(r.created_at).toLocaleTimeString() : "-"}
+                          </td>
+                        </tr>
+
+                        {/* Expandable Row with Raw Verdict JSON */}
+                        {isExpanded && (
+                          <tr className="bg-[var(--surface-hover)]">
+                            <td colSpan={8} className="px-6 py-3 font-mono text-[11px]">
+                              <div className="space-y-2 p-3 bg-[var(--surface)] border border-[var(--border)] rounded">
+                                <div className="flex items-center justify-between text-xs text-[var(--text)] font-sans font-semibold">
+                                  <span>Verdict payload & cryptographic fields</span>
+                                  <span className="font-mono text-[10px] text-[var(--text-subtle)]">
+                                    Nonce: {r.authorization_id}
+                                  </span>
+                                </div>
+                                <pre className="text-[11px] text-[var(--text-muted)] overflow-x-auto select-all">
+                                  {JSON.stringify(
+                                    {
+                                      request_id: r.id,
+                                      mandate_id: r.mandate_id,
+                                      account: r.account,
+                                      recipient: r.recipient,
+                                      amount_usdc: r.amount,
+                                      verdict: r.verdict === 1 ? "ALLOW" : "DENY",
+                                      status: r.status,
+                                      tx_hash: r.tx_hash,
+                                      expiry: r.expiry,
+                                      rejection_reason: r.rejection_reason,
+                                      created_at: r.created_at,
+                                      settled_at: r.settled_at,
+                                    },
+                                    null,
+                                    2
+                                  )}
+                                </pre>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
@@ -341,150 +366,141 @@ export function RequestsView({
         </CardContent>
       </Card>
 
-      {/* Payment Simulator Modal */}
-      <Modal
+      {/* Simulator Slide-Over Drawer */}
+      <Drawer
         isOpen={showSimulator}
-        onClose={() => setShowSimulator(false)}
-        title="AI Agent Payment Simulator"
-        description="Simulate an autonomous agent payment request and inspect the cryptographic authorization decision."
-        size="lg"
+        onClose={() => {
+          setShowSimulator(false);
+          if (onCloseSimulator) onCloseSimulator();
+        }}
+        title="Payment request simulator"
+        description="Simulate an autonomous agent payment request to verify policy evaluation."
+        width="md"
+        footer={
+          <div className="flex items-center justify-end gap-2 w-full">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowSimulator(false)}
+            >
+              Close
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              loading={isSimulating}
+              onClick={handleSimulate}
+              leftIcon={<Play className="w-3.5 h-3.5" />}
+            >
+              Evaluate request
+            </Button>
+          </div>
+        }
       >
-        <div className="space-y-5">
-          <form onSubmit={handleSimulate} className="space-y-4">
-            <div className="space-y-1.5">
-              <label htmlFor="sim-mandate-select" className="text-xs font-medium text-slate-300 block">
-                Select Mandate Policy <span className="text-rose-400">*</span>
+        <div className="space-y-4">
+          <form onSubmit={handleSimulate} className="space-y-3">
+            <div className="space-y-1">
+              <label htmlFor="sim-mandate" className="text-xs font-medium text-[var(--text)] block">
+                Target mandate policy <span className="text-[var(--danger-text)]">*</span>
               </label>
               <select
-                id="sim-mandate-select"
+                id="sim-mandate"
                 value={selectedMandateId}
                 onChange={(e) => setSelectedMandateId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-2.5 py-1.5 text-xs text-[var(--text)] focus:outline-none focus:border-[var(--border-strong)]"
               >
                 {mandates.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.title} — ${m.remaining_budget.toFixed(2)} remaining (Max ${m.max_amount_per_tx}/tx)
+                    {m.title} (${m.remaining_budget.toFixed(2)} left, max ${m.max_amount_per_tx}/tx)
                   </option>
                 ))}
               </select>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2.5">
               <div className="space-y-1">
-                <label htmlFor="sim-amount-input" className="text-xs font-medium text-slate-300 block">
-                  Requested Amount (USDC) <span className="text-rose-400">*</span>
+                <label htmlFor="sim-amount" className="text-xs font-medium text-[var(--text)] block">
+                  Amount (USDC) <span className="text-[var(--danger-text)]">*</span>
                 </label>
                 <input
-                  id="sim-amount-input"
+                  id="sim-amount"
                   type="number"
                   min="0.01"
                   step="0.01"
                   required
                   value={amount}
                   onChange={(e) => setAmount(Number(e.target.value))}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-2.5 py-1.5 text-xs font-mono tabular-nums text-[var(--text)] focus:outline-none focus:border-[var(--border-strong)]"
                 />
               </div>
 
               <div className="space-y-1">
-                <label htmlFor="sim-recipient-input" className="text-xs font-medium text-slate-300 block">
-                  Payment Destination (Recipient) <span className="text-rose-400">*</span>
+                <label htmlFor="sim-recip" className="text-xs font-medium text-[var(--text)] block">
+                  Destination address <span className="text-[var(--danger-text)]">*</span>
                 </label>
                 <input
-                  id="sim-recipient-input"
+                  id="sim-recip"
                   type="text"
                   required
                   value={recipient}
                   onChange={(e) => setRecipient(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-2.5 py-1.5 text-xs font-mono text-[var(--text)] focus:outline-none focus:border-[var(--border-strong)]"
                 />
               </div>
             </div>
-
-            <div className="flex justify-end gap-3 pt-2">
-              <Button
-                type="submit"
-                variant="primary"
-                loading={isSimulating}
-                leftIcon={<Play className="w-4 h-4" />}
-              >
-                Evaluate Policy Decision
-              </Button>
-            </div>
           </form>
 
-          {/* Error Message */}
+          {/* Evaluation Error */}
           {simError && (
-            <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-600/40 text-rose-300 text-xs flex items-start gap-2.5">
-              <XCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-semibold block">Evaluation Error</span>
-                <span>{simError}</span>
-              </div>
+            <div className="p-3 rounded bg-[var(--danger-subtle)] border border-[var(--danger-border)] text-xs text-[var(--danger-text)]">
+              {simError}
             </div>
           )}
 
-          {/* Verdict Review Card */}
+          {/* Verdict Result */}
           {simVerdict && (
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-4 text-xs animate-in fade-in duration-150">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-400">Policy Decision:</span>
-                  {simVerdict.verdict === 1 ? (
-                    <Badge variant="allow" size="md">ALLOW (Approved)</Badge>
-                  ) : (
-                    <Badge variant="deny" size="md">DENY (Rejected)</Badge>
-                  )}
-                </div>
-                <span className="text-[11px] text-slate-500 font-mono">
-                  Auth ID: {`${simVerdict.authorization_id.slice(0, 10)}...`}
-                </span>
+            <div className="p-3.5 rounded bg-[var(--surface-hover)] border border-[var(--border)] space-y-3 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-[var(--text)]">Authorization result:</span>
+                {simVerdict.verdict === 1 ? (
+                  <Badge variant="allow" size="md">ALLOW (Approved)</Badge>
+                ) : (
+                  <Badge variant="deny" size="md">DENY (Rejected)</Badge>
+                )}
               </div>
 
               {simVerdict.verdict === 0 ? (
-                <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-600/30 text-rose-300 space-y-1">
-                  <span className="font-semibold block">Reason for Denial:</span>
-                  <span>{simVerdict.reason}</span>
+                <div className="p-2.5 rounded bg-[var(--danger-subtle)] border border-[var(--danger-border)] text-[var(--danger-text)] text-xs">
+                  <strong>Rejection reason:</strong> {simVerdict.reason}
                 </div>
               ) : (
-                <div className="space-y-3">
-                  <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-600/30 text-emerald-300 space-y-1">
-                    <span className="font-semibold block">Policy Check Succeeded:</span>
-                    <span>{simVerdict.reason}</span>
-                    <span className="text-[11px] text-slate-300 block pt-1">
-                      Budget has been reserved in-flight. EIP-712 authorizer signature generated.
-                    </span>
+                <div className="space-y-2.5">
+                  <div className="p-2.5 rounded bg-[var(--success-subtle)] border border-[var(--success-border)] text-[var(--success-text)] text-xs">
+                    {simVerdict.reason}
                   </div>
 
-                  <div className="space-y-1 font-mono text-[11px] bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-slate-300">
+                  <div className="space-y-1 font-mono text-[11px] p-2.5 rounded bg-[var(--surface)] border border-[var(--border)]">
                     <div className="flex justify-between">
-                      <span className="text-slate-400">Authorizer Signer:</span>
-                      <span className="text-indigo-300">{simVerdict.authorizer_address}</span>
+                      <span className="text-[var(--text-muted)] font-sans">Signer:</span>
+                      <AddressChip address={simVerdict.authorizer_address || ""} truncateLength={4} />
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-400">Signature:</span>
-                      <span className="text-slate-400 truncate max-w-[200px]">{simVerdict.signature}</span>
+                      <span className="text-[var(--text-muted)] font-sans">Nonce:</span>
+                      <span className="truncate max-w-[160px] text-[var(--text)]">{simVerdict.authorization_id}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-400">Expiry Timestamp:</span>
-                      <span className="text-slate-300">{new Date(simVerdict.expiry * 1000).toLocaleTimeString()}</span>
+                      <span className="text-[var(--text-muted)] font-sans">Expiry:</span>
+                      <span className="text-[var(--text)]">{new Date(simVerdict.expiry * 1000).toLocaleTimeString()}</span>
                     </div>
                   </div>
 
-                  {/* Actions for Execution */}
-                  <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-800">
-                    <div>
-                      {executionTxHash ? (
-                        <div className="text-emerald-400 font-mono text-[11px] flex items-center gap-1.5">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Mined Tx: {`${executionTxHash.slice(0, 12)}...`}</span>
-                        </div>
-                      ) : (
-                        <span className="text-slate-400 text-[11px]">
-                          Submit signature on-chain to trigger token transfer.
-                        </span>
-                      )}
-                    </div>
+                  {/* Actions for on-chain execution */}
+                  <div className="pt-2 border-t border-[var(--border)] flex items-center justify-between">
+                    {executionTxHash ? (
+                      <span className="text-[var(--success-text)] font-mono text-[11px]">
+                        Tx: {executionTxHash.slice(0, 10)}...
+                      </span>
+                    ) : <span />}
 
                     <Button
                       variant="primary"
@@ -494,7 +510,7 @@ export function RequestsView({
                       disabled={settledSuccess}
                       leftIcon={<Send className="w-3.5 h-3.5" />}
                     >
-                      {settledSuccess ? "Executed & Settled" : "Execute On-Chain via Wallet"}
+                      {settledSuccess ? "Executed & Settled" : "Execute via Wallet"}
                     </Button>
                   </div>
                 </div>
@@ -502,7 +518,7 @@ export function RequestsView({
             </div>
           )}
         </div>
-      </Modal>
+      </Drawer>
     </div>
   );
 }

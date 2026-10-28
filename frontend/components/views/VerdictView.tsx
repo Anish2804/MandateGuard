@@ -5,20 +5,21 @@ import {
   ShieldCheck,
   ShieldAlert,
   KeyRound,
-  FileCode,
   CheckCircle2,
   XCircle,
+  FileCode,
   Copy,
   Check,
-  Search,
-  ExternalLink,
+  ClipboardPaste,
   Layers,
-  ArrowRight,
-  AlertTriangle,
+  Clock,
+  Info,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
+import { AddressChip } from "../ui/AddressChip";
+import { Modal } from "../ui/Modal";
 import { verifyVerdictSignature, MOCK_USDC_ADDR, CHAIN_ID } from "../../lib/api";
 
 export interface VerdictViewProps {
@@ -45,25 +46,29 @@ export function VerdictView({
   });
 
   const [isVerifying, setIsVerifying] = useState(false);
+  const [showPasteModal, setShowPasteModal] = useState(false);
+  const [pasteJsonInput, setPasteJsonInput] = useState("");
+
   const [verifyResult, setVerifyResult] = useState<{
-    isValid: boolean;
+    status: "idle" | "valid" | "invalid";
     recoveredSigner: string;
     expectedSigner: string;
     reason: string;
-  } | null>(null);
-
-  const [copiedSigner, setCopiedSigner] = useState(false);
+  }>({
+    status: "idle",
+    recoveredSigner: "",
+    expectedSigner: defaultAuthorizerSigner || "",
+    reason: "",
+  });
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.signature.trim()) {
-      alert("Please provide an ECDSA signature hex string to verify");
+      alert("Please provide an ECDSA signature string.");
       return;
     }
 
     setIsVerifying(true);
-    setVerifyResult(null);
-
     try {
       const res = await verifyVerdictSignature({
         verdict: Number(form.verdict),
@@ -80,266 +85,343 @@ export function VerdictView({
       });
 
       setVerifyResult({
-        isValid: res.is_valid,
+        status: res.is_valid ? "valid" : "invalid",
         recoveredSigner: res.recovered_signer,
         expectedSigner: res.expected_signer,
         reason: res.reason,
       });
     } catch (err: any) {
       setVerifyResult({
-        isValid: false,
+        status: "invalid",
         recoveredSigner: "0x0000000000000000000000000000000000000000",
         expectedSigner: defaultAuthorizerSigner || "Unknown",
-        reason: `Verification execution failed: ${err.message}`,
+        reason: err.message || "Cryptographic verification call failed",
       });
     } finally {
       setIsVerifying(false);
     }
   };
 
+  const handlePasteJsonSubmit = () => {
+    try {
+      const parsed = JSON.parse(pasteJsonInput);
+      setForm((prev) => ({
+        ...prev,
+        verdict: parsed.verdict ?? prev.verdict,
+        chainId: parsed.chainId ?? parsed.chain_id ?? prev.chainId,
+        account: parsed.account ?? prev.account,
+        token: parsed.token ?? prev.token,
+        recipient: parsed.recipient ?? prev.recipient,
+        amount: parsed.amount ?? prev.amount,
+        mandateId: parsed.mandateId ?? parsed.mandate_id ?? prev.mandateId,
+        authorizationId: parsed.authorizationId ?? parsed.authorization_id ?? prev.authorizationId,
+        expiry: parsed.expiry ?? prev.expiry,
+        mandateVersion: parsed.mandateVersion ?? parsed.mandate_version ?? prev.mandateVersion,
+        signature: parsed.signature ?? prev.signature,
+      }));
+      setShowPasteModal(false);
+      setPasteJsonInput("");
+    } catch (err: any) {
+      alert(`Invalid JSON format: ${err.message}`);
+    }
+  };
+
   return (
-    <div className="space-y-6">
-      {/* Overview Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Cryptographic EIP-712 Verdict Verification</CardTitle>
-          <CardDescription>
-            Inspect and mathematically verify authorizer signatures under the MandateGuard EIP-712 typed-data schema.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs font-mono">
-            <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800">
-              <span className="text-slate-400 block font-sans">1. Signature Validity</span>
-              <span className="text-indigo-400 font-semibold mt-1 block">
-                ECDSA secp256k1 recovery
-              </span>
-            </div>
-            <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800">
-              <span className="text-slate-400 block font-sans">2. Policy Validity</span>
-              <span className="text-slate-200 mt-1 block">Pre-signed boundary check</span>
-            </div>
-            <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800">
-              <span className="text-slate-400 block font-sans">3. Replay Defense</span>
-              <span className="text-slate-200 mt-1 block">Single-use authorization ID</span>
-            </div>
-            <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800">
-              <span className="text-slate-400 block font-sans">4. Settlement Status</span>
-              <span className="text-slate-200 mt-1 block">On-chain receipt observation</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Main Verification Form & Results Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Input Form */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Verdict Payload Parameters</CardTitle>
-            <CardDescription>
-              Enter the exact parameters signed in the PaymentVerdict struct.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleVerify} className="space-y-3.5 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label htmlFor="v-verdict" className="text-slate-400 block font-medium">Verdict</label>
-                  <select
-                    id="v-verdict"
-                    value={form.verdict}
-                    onChange={(e) => setForm({ ...form, verdict: Number(e.target.value) })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200"
-                  >
-                    <option value={1}>1 — ALLOW (Approved)</option>
-                    <option value={0}>0 — DENY (Rejected)</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label htmlFor="v-chain" className="text-slate-400 block font-medium">Chain ID</label>
-                  <input
-                    id="v-chain"
-                    type="number"
-                    value={form.chainId}
-                    onChange={(e) => setForm({ ...form, chainId: Number(e.target.value) })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 font-mono text-slate-200"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label htmlFor="v-account" className="text-slate-400 block font-medium">Smart Account Address</label>
-                <input
-                  id="v-account"
-                  type="text"
-                  value={form.account}
-                  onChange={(e) => setForm({ ...form, account: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 font-mono text-slate-200"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label htmlFor="v-token" className="text-slate-400 block font-medium">Token Contract</label>
-                  <input
-                    id="v-token"
-                    type="text"
-                    value={form.token}
-                    onChange={(e) => setForm({ ...form, token: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 font-mono text-slate-200"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label htmlFor="v-amount" className="text-slate-400 block font-medium">Amount (USDC)</label>
-                  <input
-                    id="v-amount"
-                    type="number"
-                    value={form.amount}
-                    onChange={(e) => setForm({ ...form, amount: Number(e.target.value) })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 font-mono text-slate-200"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label htmlFor="v-recipient" className="text-slate-400 block font-medium">Recipient Address</label>
-                <input
-                  id="v-recipient"
-                  type="text"
-                  value={form.recipient}
-                  onChange={(e) => setForm({ ...form, recipient: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 font-mono text-slate-200"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label htmlFor="v-mandate-id" className="text-slate-400 block font-medium">Mandate ID</label>
-                  <input
-                    id="v-mandate-id"
-                    type="text"
-                    value={form.mandateId}
-                    onChange={(e) => setForm({ ...form, mandateId: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 font-mono text-slate-200"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label htmlFor="v-auth-id" className="text-slate-400 block font-medium">Authorization ID Nonce</label>
-                  <input
-                    id="v-auth-id"
-                    type="text"
-                    value={form.authorizationId}
-                    onChange={(e) => setForm({ ...form, authorizationId: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 font-mono text-slate-200"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label htmlFor="v-sig" className="text-slate-300 block font-medium">
-                  ECDSA Signature Hex <span className="text-rose-400">*</span>
-                </label>
-                <textarea
-                  id="v-sig"
-                  rows={2}
-                  required
-                  placeholder="0x..."
-                  value={form.signature}
-                  onChange={(e) => setForm({ ...form, signature: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 font-mono text-[11px] text-emerald-400 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="pt-2">
+    <div className="space-y-4">
+      {/* 2-Column Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* Left Column: Grouped Form (7 cols) */}
+        <div className="lg:col-span-7">
+          <Card>
+            <CardHeader className="py-2.5">
+              <div className="flex items-center justify-between w-full">
+                <CardTitle className="text-xs">Signed verdict parameters</CardTitle>
                 <Button
-                  type="submit"
-                  variant="primary"
-                  className="w-full justify-center"
-                  loading={isVerifying}
-                  leftIcon={<ShieldCheck className="w-4 h-4" />}
+                  variant="secondary"
+                  size="sm"
+                  className="h-7 text-[11px] px-2"
+                  onClick={() => setShowPasteModal(true)}
+                  leftIcon={<ClipboardPaste className="w-3 h-3" />}
                 >
-                  Verify EIP-712 Signature
+                  Paste JSON
                 </Button>
               </div>
-            </form>
-          </CardContent>
-        </Card>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleVerify} className="space-y-3 text-xs">
+                {/* Group 1: Verdict & Chain */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <label htmlFor="v-decision" className="text-[11px] font-medium text-[var(--text-muted)] block">
+                      Verdict
+                    </label>
+                    <select
+                      id="v-decision"
+                      value={form.verdict}
+                      onChange={(e) => setForm({ ...form, verdict: Number(e.target.value) })}
+                      className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-2.5 py-1.5 text-xs text-[var(--text)] focus:outline-none"
+                    >
+                      <option value={1}>1 — ALLOW (Approved)</option>
+                      <option value={0}>0 — DENY (Rejected)</option>
+                    </select>
+                  </div>
 
-        {/* Verification Result Breakdown */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Verification Analysis</CardTitle>
-            <CardDescription>
-              Direct result from backend cryptographic recovery module.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {verifyResult ? (
-              <div className="space-y-4">
-                <div
-                  className={`p-4 rounded-xl border flex items-center justify-between ${
-                    verifyResult.isValid
-                      ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300"
-                      : "bg-rose-950/40 border-rose-500/40 text-rose-300"
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    {verifyResult.isValid ? (
-                      <CheckCircle2 className="w-6 h-6 text-emerald-400 shrink-0" />
-                    ) : (
-                      <XCircle className="w-6 h-6 text-rose-400 shrink-0" />
-                    )}
-                    <div>
-                      <span className="font-bold text-sm block">
-                        {verifyResult.isValid
-                          ? "Cryptographic Signature VALID"
-                          : "Signature Verification FAILED"}
-                      </span>
-                      <span className="text-xs">{verifyResult.reason}</span>
-                    </div>
+                  <div className="space-y-1">
+                    <label htmlFor="v-chain" className="text-[11px] font-medium text-[var(--text-muted)] block">
+                      Chain ID
+                    </label>
+                    <input
+                      id="v-chain"
+                      type="number"
+                      value={form.chainId}
+                      onChange={(e) => setForm({ ...form, chainId: Number(e.target.value) })}
+                      className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-2.5 py-1.5 font-mono text-xs text-[var(--text)] focus:outline-none"
+                    />
                   </div>
                 </div>
 
-                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3 font-mono text-xs">
+                {/* Group 2: Account & Token */}
+                <div className="space-y-1">
+                  <label htmlFor="v-account" className="text-[11px] font-medium text-[var(--text-muted)] block">
+                    Smart account
+                  </label>
+                  <input
+                    id="v-account"
+                    type="text"
+                    value={form.account}
+                    onChange={(e) => setForm({ ...form, account: e.target.value })}
+                    className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-2.5 py-1.5 font-mono text-xs text-[var(--text)] focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <label htmlFor="v-token" className="text-[11px] font-medium text-[var(--text-muted)] block">
+                      Token contract
+                    </label>
+                    <input
+                      id="v-token"
+                      type="text"
+                      value={form.token}
+                      onChange={(e) => setForm({ ...form, token: e.target.value })}
+                      className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-2.5 py-1.5 font-mono text-xs text-[var(--text)] focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label htmlFor="v-amount" className="text-[11px] font-medium text-[var(--text-muted)] block">
+                      Amount (USDC)
+                    </label>
+                    <input
+                      id="v-amount"
+                      type="number"
+                      value={form.amount}
+                      onChange={(e) => setForm({ ...form, amount: Number(e.target.value) })}
+                      className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-2.5 py-1.5 font-mono text-xs tabular-nums text-[var(--text)] focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Group 3: Recipient */}
+                <div className="space-y-1">
+                  <label htmlFor="v-recip" className="text-[11px] font-medium text-[var(--text-muted)] block">
+                    Recipient address
+                  </label>
+                  <input
+                    id="v-recip"
+                    type="text"
+                    value={form.recipient}
+                    onChange={(e) => setForm({ ...form, recipient: e.target.value })}
+                    className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-2.5 py-1.5 font-mono text-xs text-[var(--text)] focus:outline-none"
+                  />
+                </div>
+
+                {/* Group 4: Nonce & Mandate */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <label htmlFor="v-mandate" className="text-[11px] font-medium text-[var(--text-muted)] block">
+                      Mandate ID
+                    </label>
+                    <input
+                      id="v-mandate"
+                      type="text"
+                      value={form.mandateId}
+                      onChange={(e) => setForm({ ...form, mandateId: e.target.value })}
+                      className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-2.5 py-1.5 font-mono text-xs text-[var(--text)] focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label htmlFor="v-auth" className="text-[11px] font-medium text-[var(--text-muted)] block">
+                      Authorization ID nonce
+                    </label>
+                    <input
+                      id="v-auth"
+                      type="text"
+                      value={form.authorizationId}
+                      onChange={(e) => setForm({ ...form, authorizationId: e.target.value })}
+                      className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-2.5 py-1.5 font-mono text-xs text-[var(--text)] focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Group 5: Signature */}
+                <div className="space-y-1">
+                  <label htmlFor="v-signature" className="text-[11px] font-medium text-[var(--text)] block">
+                    ECDSA signature hex <span className="text-[var(--danger-text)]">*</span>
+                  </label>
+                  <textarea
+                    id="v-signature"
+                    rows={2}
+                    required
+                    placeholder="0x..."
+                    value={form.signature}
+                    onChange={(e) => setForm({ ...form, signature: e.target.value })}
+                    className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-2.5 py-1.5 font-mono text-[11px] text-[var(--text)] placeholder-[var(--text-subtle)] focus:outline-none focus:border-[var(--border-strong)]"
+                  />
+                </div>
+
+                <div className="pt-2">
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    size="sm"
+                    className="w-full justify-center"
+                    loading={isVerifying}
+                    leftIcon={<ShieldCheck className="w-3.5 h-3.5" />}
+                  >
+                    Verify EIP-712 signature
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right Column: Result Panel & 4-Step Checklist (5 cols) */}
+        <div className="lg:col-span-5 space-y-4">
+          <Card>
+            <CardHeader className="py-2.5">
+              <CardTitle className="text-xs">Verification result</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3.5">
+              {verifyResult.status === "idle" && (
+                <div className="py-8 text-center text-xs text-[var(--text-muted)] space-y-1.5">
+                  <KeyRound className="w-6 h-6 mx-auto text-[var(--text-subtle)]" />
+                  <p>Input signature parameters and run verification to inspect cryptographic recovery.</p>
+                </div>
+              )}
+
+              {verifyResult.status === "valid" && (
+                <div className="p-3 rounded bg-[var(--success-subtle)] border border-[var(--success-border)] text-xs text-[var(--success-text)] space-y-2">
+                  <div className="flex items-center gap-2 font-semibold">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>Cryptographic signature valid</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed">
+                    Recovered signer mathematically matches the configured authorizer address.
+                  </p>
+                </div>
+              )}
+
+              {verifyResult.status === "invalid" && (
+                <div className="p-3 rounded bg-[var(--danger-subtle)] border border-[var(--danger-border)] text-xs text-[var(--danger-text)] space-y-2">
+                  <div className="flex items-center gap-2 font-semibold">
+                    <XCircle className="w-4 h-4 shrink-0" />
+                    <span>Signature verification failed</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed">{verifyResult.reason}</p>
+                </div>
+              )}
+
+              {/* Signer Key Inspector */}
+              {verifyResult.status !== "idle" && (
+                <div className="p-3 rounded bg-[var(--surface-hover)] border border-[var(--border)] space-y-2 text-xs font-mono">
                   <div>
-                    <span className="text-slate-400 block font-sans">Recovered Signer:</span>
-                    <span className="text-slate-100 font-semibold break-all">
-                      {verifyResult.recoveredSigner}
-                    </span>
+                    <span className="text-[11px] text-[var(--text-muted)] font-sans block">Recovered signer:</span>
+                    <AddressChip address={verifyResult.recoveredSigner} truncateLength={6} />
                   </div>
-
-                  <div className="pt-2 border-t border-slate-800">
-                    <span className="text-slate-400 block font-sans">Expected Authorizer Signer:</span>
-                    <span className="text-indigo-300 font-semibold break-all">
-                      {verifyResult.expectedSigner}
-                    </span>
+                  <div className="pt-2 border-t border-[var(--border)]">
+                    <span className="text-[11px] text-[var(--text-muted)] font-sans block">Expected authorizer key:</span>
+                    <AddressChip address={verifyResult.expectedSigner} truncateLength={6} />
                   </div>
                 </div>
+              )}
 
-                <div className="p-3.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-300 space-y-2">
-                  <span className="font-semibold text-slate-200 block font-sans">
-                    Verification Rule Compliance:
-                  </span>
-                  <ul className="space-y-1 list-disc list-inside text-slate-400">
-                    <li>Domain Separator verified for Target Chain ID.</li>
-                    <li>PaymentVerdict typehash matches smart account specification.</li>
-                    <li>Timestamp verified against current epoch for expiration status.</li>
-                  </ul>
+              {/* 4 Verification Steps Checklist */}
+              <div className="space-y-2 pt-2 border-t border-[var(--border)]">
+                <span className="text-xs font-semibold text-[var(--text)] block">
+                  Verification criteria:
+                </span>
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex items-center gap-2 text-[var(--text)]">
+                    {verifyResult.status === "valid" ? (
+                      <Check className="w-3.5 h-3.5 text-[var(--success-text)]" />
+                    ) : (
+                      <span className="w-3.5 h-3.5 rounded-full border border-[var(--border)] inline-block" />
+                    )}
+                    <span>1. EIP-712 domain separator matches chain</span>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-[var(--text)]">
+                    {verifyResult.status === "valid" ? (
+                      <Check className="w-3.5 h-3.5 text-[var(--success-text)]" />
+                    ) : (
+                      <span className="w-3.5 h-3.5 rounded-full border border-[var(--border)] inline-block" />
+                    )}
+                    <span>2. PaymentVerdict typehash alignment</span>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-[var(--text)]">
+                    {verifyResult.status === "valid" ? (
+                      <Check className="w-3.5 h-3.5 text-[var(--success-text)]" />
+                    ) : (
+                      <span className="w-3.5 h-3.5 rounded-full border border-[var(--border)] inline-block" />
+                    )}
+                    <span>3. ECDSA secp256k1 recovery matches key</span>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-[var(--text)]">
+                    {verifyResult.status === "valid" ? (
+                      <Check className="w-3.5 h-3.5 text-[var(--success-text)]" />
+                    ) : (
+                      <span className="w-3.5 h-3.5 rounded-full border border-[var(--border)] inline-block" />
+                    )}
+                    <span>4. Expiration timestamp unexpired</span>
+                  </div>
                 </div>
               </div>
-            ) : (
-              <div className="text-center py-12 text-slate-500 text-xs space-y-2">
-                <KeyRound className="w-8 h-8 mx-auto text-slate-600" />
-                <p>Provide a signature and parameters on the left to execute cryptographic recovery.</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
       </div>
+
+      {/* Paste JSON Modal */}
+      <Modal
+        isOpen={showPasteModal}
+        onClose={() => setShowPasteModal(false)}
+        title="Paste verdict JSON"
+        description="Quickly import an authorization verdict payload from agent logs or simulator output."
+        size="md"
+      >
+        <div className="space-y-3">
+          <textarea
+            rows={8}
+            placeholder={`{\n  "verdict": 1,\n  "amount": 25,\n  "recipient": "0x...",\n  "signature": "0x..."\n}`}
+            value={pasteJsonInput}
+            onChange={(e) => setPasteJsonInput(e.target.value)}
+            className="w-full bg-[var(--surface-hover)] border border-[var(--border)] rounded p-2.5 font-mono text-xs text-[var(--text)] focus:outline-none"
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setShowPasteModal(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" size="sm" onClick={handlePasteJsonSubmit}>
+              Apply payload
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

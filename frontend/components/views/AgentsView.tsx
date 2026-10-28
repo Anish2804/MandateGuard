@@ -9,14 +9,16 @@ import {
   Check,
   Trash2,
   Lock,
-  ShieldCheck,
-  AlertTriangle,
   Search,
+  AlertTriangle,
+  ShieldCheck,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
-import { Modal } from "../ui/Modal";
+import { Drawer } from "../ui/Drawer";
+import { AddressChip } from "../ui/AddressChip";
+import { EmptyState } from "../ui/EmptyState";
 import { ApiKeyItem, ApiKeyCreatedResult } from "../../lib/api";
 
 export interface AgentsViewProps {
@@ -25,6 +27,8 @@ export interface AgentsViewProps {
   onRefresh: () => void;
   onCreateApiKey: (name: string, account: string) => Promise<ApiKeyCreatedResult>;
   onRevokeApiKey: (id: string) => Promise<boolean>;
+  isProvisionOpen?: boolean;
+  onCloseProvision?: () => void;
 }
 
 export function AgentsView({
@@ -33,19 +37,22 @@ export function AgentsView({
   onRefresh,
   onCreateApiKey,
   onRevokeApiKey,
+  isProvisionOpen = false,
+  onCloseProvision,
 }: AgentsViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showDrawer, setShowDrawer] = useState(isProvisionOpen);
   const [agentName, setAgentName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [createdKeyResult, setCreatedKeyResult] = useState<ApiKeyCreatedResult | null>(null);
+  const [createdResult, setCreatedResult] = useState<ApiKeyCreatedResult | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
 
-  const filteredKeys = apiKeys.filter((k) =>
-    k.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    k.account_address.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    k.key_prefix.toLowerCase().includes(searchTerm.toLowerCase())
+  const filtered = apiKeys.filter(
+    (k) =>
+      k.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      k.key_prefix.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      k.account_address.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -54,7 +61,7 @@ export function AgentsView({
     setIsSubmitting(true);
     try {
       const res = await onCreateApiKey(agentName.trim(), activeSmartAccount);
-      setCreatedKeyResult(res);
+      setCreatedResult(res);
       setAgentName("");
     } catch (err: any) {
       alert(`Failed to create API key: ${err?.message || "Unknown error"}`);
@@ -63,16 +70,8 @@ export function AgentsView({
     }
   };
 
-  const handleCopy = () => {
-    if (createdKeyResult?.api_key) {
-      navigator.clipboard.writeText(createdKeyResult.api_key);
-      setCopiedKey(true);
-      setTimeout(() => setCopiedKey(false), 2000);
-    }
-  };
-
   const handleRevoke = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to revoke API key for agent "${name}"? It will immediately lose authorization to spend from this smart account.`)) {
+    if (!confirm(`Revoke credentials for agent "${name}"? The agent will immediately lose access to request payments.`)) {
       return;
     }
     setRevokingId(id);
@@ -84,107 +83,114 @@ export function AgentsView({
     }
   };
 
+  const handleCopyKey = () => {
+    if (createdResult?.api_key) {
+      navigator.clipboard.writeText(createdResult.api_key);
+      setCopiedKey(true);
+      setTimeout(() => setCopiedKey(false), 2000);
+    }
+  };
+
   return (
-    <div className="space-y-6">
-      {/* Header & Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+    <div className="space-y-4">
+      {/* Search & Actions Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
           <input
             type="text"
-            placeholder="Search agents by name, prefix, or account..."
+            placeholder="Search agents by name or key prefix..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-4 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full bg-[var(--surface)] border border-[var(--border)] rounded pl-8 pr-3 py-1.5 text-xs text-[var(--text)] placeholder-[var(--text-subtle)] focus:outline-none focus:border-[var(--border-strong)]"
           />
         </div>
 
         <Button
           variant="primary"
+          size="sm"
           onClick={() => {
-            setCreatedKeyResult(null);
-            setShowCreateModal(true);
+            setCreatedResult(null);
+            setShowDrawer(true);
           }}
-          leftIcon={<PlusCircle className="w-4 h-4" />}
+          leftIcon={<PlusCircle className="w-3.5 h-3.5" />}
         >
-          Provision New Agent
+          Provision agent
         </Button>
       </div>
 
-      {/* Agents Table / Cards */}
+      {/* Agents Table */}
       <Card>
-        <CardHeader>
-          <CardTitle>Autonomous Agent Identity & Permissions</CardTitle>
-          <CardDescription>
-            Agents are provisioned with cryptographic API keys and locked strictly to designated smart accounts.
-          </CardDescription>
-        </CardHeader>
         <CardContent className="p-0">
-          {filteredKeys.length === 0 ? (
-            <div className="text-center py-12 px-4 space-y-3">
-              <Bot className="w-10 h-10 text-slate-600 mx-auto" />
-              <h3 className="text-sm font-semibold text-slate-300">No agent credentials found</h3>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                Provision an agent API key to allow autonomous AI agents (LangChain, AutoGen, CrewAI) to request payment verdicts securely.
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setCreatedKeyResult(null);
-                  setShowCreateModal(true);
-                }}
-              >
-                Provision First Agent
-              </Button>
-            </div>
+          {filtered.length === 0 ? (
+            <EmptyState
+              icon={<Bot className="w-4 h-4" />}
+              title="No agent credentials found"
+              description="Provision an API key for your autonomous AI agent to request payment verdicts."
+              action={
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    setCreatedResult(null);
+                    setShowDrawer(true);
+                  }}
+                >
+                  Provision agent
+                </Button>
+              }
+            />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-300" aria-label="Agent credentials table">
-                <thead className="bg-slate-950/60 border-b border-slate-800/80 text-slate-400 uppercase font-mono text-[11px]">
+              <table className="w-full text-left text-xs" aria-label="Provisioned agents table">
+                <thead className="bg-[var(--surface-hover)] border-b border-[var(--border)] text-[var(--text-muted)] font-medium">
                   <tr>
-                    <th scope="col" className="px-5 py-3">Agent Identifier</th>
-                    <th scope="col" className="px-5 py-3">Key Prefix</th>
-                    <th scope="col" className="px-5 py-3">Locked Smart Account</th>
-                    <th scope="col" className="px-5 py-3">Status</th>
-                    <th scope="col" className="px-5 py-3">Created</th>
-                    <th scope="col" className="px-5 py-3 text-right">Actions</th>
+                    <th scope="col" className="px-4 py-2.5">Agent identifier</th>
+                    <th scope="col" className="px-4 py-2.5">Key prefix</th>
+                    <th scope="col" className="px-4 py-2.5">Bound smart account</th>
+                    <th scope="col" className="px-4 py-2.5">Status</th>
+                    <th scope="col" className="px-4 py-2.5">Created</th>
+                    <th scope="col" className="px-4 py-2.5 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60">
-                  {filteredKeys.map((k) => (
-                    <tr key={k.id} className="hover:bg-slate-800/30 transition-colors">
-                      <td className="px-5 py-3.5 font-medium text-slate-100 flex items-center gap-2">
-                        <Bot className="w-4 h-4 text-indigo-400 shrink-0" />
+                <tbody className="divide-y divide-[var(--border)]">
+                  {filtered.map((k) => (
+                    <tr key={k.id} className="hover:bg-[var(--surface-hover)] transition-colors">
+                      <td className="px-4 py-2.5 font-medium text-[var(--text)] flex items-center gap-2">
+                        <Bot className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
                         <span>{k.name}</span>
                       </td>
-                      <td className="px-5 py-3.5 font-mono text-slate-400">
+
+                      <td className="px-4 py-2.5 font-mono text-[var(--text-muted)] text-[11px]">
                         {k.key_prefix}...
                       </td>
-                      <td className="px-5 py-3.5 font-mono text-indigo-300 text-[11px]">
-                        {k.account_address}
+
+                      <td className="px-4 py-2.5">
+                        <AddressChip address={k.account_address} truncateLength={4} />
                       </td>
-                      <td className="px-5 py-3.5">
+
+                      <td className="px-4 py-2.5">
                         {k.is_active ? (
-                          <Badge variant="active" size="sm">Active</Badge>
+                          <Badge variant="success" size="sm">Active</Badge>
                         ) : (
-                          <Badge variant="revoked" size="sm">Revoked</Badge>
+                          <Badge variant="danger" size="sm">Revoked</Badge>
                         )}
                       </td>
-                      <td className="px-5 py-3.5 text-slate-500 font-mono text-[11px]">
+
+                      <td className="px-4 py-2.5 text-[var(--text-muted)] font-mono text-[11px]">
                         {new Date(k.created_at).toLocaleDateString()}
                       </td>
-                      <td className="px-5 py-3.5 text-right">
+
+                      <td className="px-4 py-2.5 text-right">
                         {k.is_active && (
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="text-rose-400 hover:text-rose-300 hover:bg-rose-950/40"
+                            className="text-[var(--danger-text)] hover:bg-[var(--danger-subtle)] text-[11px] h-7 px-2"
                             loading={revokingId === k.id}
                             onClick={() => handleRevoke(k.id, k.name)}
-                            leftIcon={<Trash2 className="w-3.5 h-3.5" />}
                           >
-                            Revoke
+                            Revoke key
                           </Button>
                         )}
                       </td>
@@ -197,115 +203,122 @@ export function AgentsView({
         </CardContent>
       </Card>
 
-      {/* Provision New Agent Modal */}
-      <Modal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        title={createdKeyResult ? "Agent API Key Provisioned" : "Provision New AI Agent"}
+      {/* Provision Drawer */}
+      <Drawer
+        isOpen={showDrawer}
+        onClose={() => {
+          setShowDrawer(false);
+          setCreatedResult(null);
+          if (onCloseProvision) onCloseProvision();
+        }}
+        title={createdResult ? "Agent credentials created" : "Provision agent"}
         description={
-          createdKeyResult
-            ? "Save your agent's API key now. It will NEVER be displayed again."
-            : "Bind an autonomous agent identity to your isolated smart account."
+          createdResult
+            ? "Copy and securely store this key now. It cannot be shown again."
+            : "Bind an autonomous agent to your guarded smart account."
+        }
+        width="md"
+        footer={
+          createdResult ? (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                setShowDrawer(false);
+                setCreatedResult(null);
+                onRefresh();
+              }}
+            >
+              Done
+            </Button>
+          ) : (
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowDrawer(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                loading={isSubmitting}
+                onClick={handleCreate}
+              >
+                Generate key
+              </Button>
+            </div>
+          )
         }
       >
-        {createdKeyResult ? (
+        {createdResult ? (
           <div className="space-y-4">
-            <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-600/40 text-emerald-300 space-y-2">
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                <ShieldCheck className="w-4 h-4" />
-                <span>Agent Key Created Successfully</span>
-              </div>
-              <p className="text-xs text-slate-300">
-                Agent <strong className="text-white">{createdKeyResult.name}</strong> is authorized to request payments from account:
-              </p>
-              <p className="text-[11px] font-mono text-indigo-300 break-all bg-slate-950/60 p-2 rounded border border-slate-800">
-                {createdKeyResult.account_address}
-              </p>
+            <div className="p-3 rounded bg-[var(--success-subtle)] border border-[var(--success-border)] text-xs text-[var(--success-text)] space-y-1">
+              <span className="font-semibold block">Key generated for {createdResult.name}</span>
+              <p>Locked to smart account {createdResult.account_address.slice(0, 10)}...</p>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400">Agent API Secret Key</label>
-              <div className="flex items-center gap-2">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[var(--text)] block">
+                Agent API key
+              </label>
+              <div className="flex items-center gap-1.5">
                 <input
                   type="text"
                   readOnly
-                  value={createdKeyResult.api_key}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-emerald-400 select-all"
+                  value={createdResult.api_key}
+                  className="w-full bg-[var(--surface-hover)] border border-[var(--border)] rounded px-2.5 py-1.5 font-mono text-xs text-[var(--text)] select-all focus:outline-none"
                 />
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={handleCopy}
-                  leftIcon={copiedKey ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  onClick={handleCopyKey}
+                  leftIcon={copiedKey ? <Check className="w-3.5 h-3.5 text-[var(--success-text)]" /> : <Copy className="w-3.5 h-3.5" />}
                 >
                   {copiedKey ? "Copied" : "Copy"}
                 </Button>
               </div>
             </div>
 
-            <div className="p-3 rounded-lg bg-amber-950/40 border border-amber-600/30 text-amber-300 text-xs flex items-start gap-2">
+            <div className="p-2.5 rounded bg-[var(--warning-subtle)] border border-[var(--warning-border)] text-xs text-[var(--warning-text)] flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>
-                Pass this key via the <code>X-API-Key</code> HTTP header in your agent SDK calls. If lost, you must revoke and generate a new key.
+                Pass this key via the <code>X-API-Key</code> HTTP header in your agent SDK calls. For security reasons, it cannot be displayed again after closing this drawer.
               </span>
-            </div>
-
-            <div className="pt-2 flex justify-end">
-              <Button
-                variant="primary"
-                onClick={() => {
-                  setShowCreateModal(false);
-                  setCreatedKeyResult(null);
-                  onRefresh();
-                }}
-              >
-                Done
-              </Button>
             </div>
           </div>
         ) : (
-          <form onSubmit={handleCreate} className="space-y-4">
-            <div className="space-y-1.5">
-              <label htmlFor="agent-name-input" className="text-xs font-medium text-slate-300 block">
-                Agent Name or Identifier <span className="text-rose-400">*</span>
+          <form onSubmit={handleCreate} className="space-y-3">
+            <div className="space-y-1">
+              <label htmlFor="agent-name" className="text-xs font-medium text-[var(--text)] block">
+                Agent name or identifier <span className="text-[var(--danger-text)]">*</span>
               </label>
               <input
-                id="agent-name-input"
+                id="agent-name"
                 type="text"
                 required
-                placeholder="e.g. TravelPlannerAgent, DevOpsRelayer, AutoBuyer-01"
+                placeholder="e.g. TravelPlannerAgent, DevOpsRelayer"
                 value={agentName}
                 onChange={(e) => setAgentName(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-3 py-1.5 text-xs text-[var(--text)] placeholder-[var(--text-subtle)] focus:outline-none focus:border-[var(--border-strong)]"
               />
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400 block">
-                Target Smart Account Lock
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[var(--text-muted)] block">
+                Account binding
               </label>
-              <input
-                type="text"
-                readOnly
-                value={activeSmartAccount}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-400 select-none cursor-not-allowed"
-              />
-              <span className="text-[11px] text-slate-500 block">
-                This agent will only be permitted to request payments funded by this specific smart account.
+              <div className="p-2.5 rounded bg-[var(--surface-hover)] border border-[var(--border)] text-xs font-mono text-[var(--text)]">
+                {activeSmartAccount}
+              </div>
+              <span className="text-[11px] text-[var(--text-muted)] block">
+                The agent will be strictly constrained to spend from this account.
               </span>
-            </div>
-
-            <div className="pt-3 border-t border-slate-800 flex justify-end gap-3">
-              <Button variant="outline" onClick={() => setShowCreateModal(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" variant="primary" loading={isSubmitting}>
-                Generate Key
-              </Button>
             </div>
           </form>
         )}
-      </Modal>
+      </Drawer>
     </div>
   );
 }

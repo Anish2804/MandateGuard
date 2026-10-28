@@ -1,18 +1,21 @@
 "use client";
 
 import React from "react";
-import { CheckCircle2, XCircle, Clock, AlertTriangle, ShieldCheck, ShieldAlert, Sparkles } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, AlertTriangle, ShieldCheck, ShieldAlert, Sparkles, Check } from "lucide-react";
 
 export type BadgeVariant =
+  | "success"
+  | "warning"
+  | "danger"
+  | "info"
+  | "neutral"
   | "allow"
   | "deny"
   | "settled"
   | "pending"
   | "revoked"
   | "active"
-  | "exhausted"
-  | "info"
-  | "neutral";
+  | "exhausted";
 
 export interface BadgeProps {
   children: React.ReactNode;
@@ -25,62 +28,58 @@ export interface BadgeProps {
 export function Badge({
   children,
   variant = "neutral",
-  size = "md",
+  size = "sm",
   showIcon = true,
   className = "",
 }: BadgeProps) {
   const sizeStyles = {
-    sm: "text-[11px] px-2 py-0.5 gap-1 font-medium",
-    md: "text-xs px-2.5 py-1 gap-1.5 font-semibold",
+    sm: "text-[11px] h-5 px-1.5 gap-1 font-medium",
+    md: "text-xs h-6 px-2 gap-1.5 font-medium",
   }[size];
 
-  const variantConfig: Record<
-    BadgeVariant,
-    { styles: string; icon: React.ReactNode }
-  > = {
-    allow: {
-      styles: "bg-emerald-950/60 text-emerald-400 border border-emerald-500/30",
-      icon: <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />,
-    },
-    active: {
-      styles: "bg-emerald-950/60 text-emerald-400 border border-emerald-500/30",
-      icon: <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />,
-    },
-    settled: {
-      styles: "bg-blue-950/60 text-blue-400 border border-blue-500/30",
-      icon: <CheckCircle2 className="w-3.5 h-3.5 text-blue-400 shrink-0" aria-hidden="true" />,
-    },
-    deny: {
-      styles: "bg-rose-950/60 text-rose-400 border border-rose-500/30",
-      icon: <XCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" aria-hidden="true" />,
-    },
-    revoked: {
-      styles: "bg-rose-950/60 text-rose-400 border border-rose-500/30",
-      icon: <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0" aria-hidden="true" />,
-    },
-    pending: {
-      styles: "bg-amber-950/60 text-amber-400 border border-amber-500/30",
-      icon: <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" aria-hidden="true" />,
-    },
-    exhausted: {
-      styles: "bg-amber-950/60 text-amber-400 border border-amber-500/30",
-      icon: <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" aria-hidden="true" />,
-    },
-    info: {
-      styles: "bg-indigo-950/60 text-indigo-400 border border-indigo-500/30",
-      icon: <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" aria-hidden="true" />,
-    },
-    neutral: {
-      styles: "bg-slate-800 text-slate-300 border border-slate-700/80",
-      icon: null,
-    },
+  const getVariantConfig = (v: BadgeVariant) => {
+    switch (v) {
+      case "success":
+      case "allow":
+      case "settled":
+      case "active":
+        return {
+          styles: "bg-[var(--success-subtle)] text-[var(--success-text)] border border-[var(--success-border)]",
+          icon: <Check className="w-3 h-3 text-[var(--success-text)] shrink-0" aria-hidden="true" />,
+        };
+      case "warning":
+      case "pending":
+      case "exhausted":
+        return {
+          styles: "bg-[var(--warning-subtle)] text-[var(--warning-text)] border border-[var(--warning-border)]",
+          icon: <Clock className="w-3 h-3 text-[var(--warning-text)] shrink-0" aria-hidden="true" />,
+        };
+      case "danger":
+      case "deny":
+      case "revoked":
+        return {
+          styles: "bg-[var(--danger-subtle)] text-[var(--danger-text)] border border-[var(--danger-border)]",
+          icon: <XCircle className="w-3 h-3 text-[var(--danger-text)] shrink-0" aria-hidden="true" />,
+        };
+      case "info":
+        return {
+          styles: "bg-[var(--info-subtle)] text-[var(--info-text)] border border-[var(--info-border)]",
+          icon: <Sparkles className="w-3 h-3 text-[var(--info-text)] shrink-0" aria-hidden="true" />,
+        };
+      case "neutral":
+      default:
+        return {
+          styles: "bg-[var(--surface-hover)] text-[var(--text-muted)] border border-[var(--border)]",
+          icon: null,
+        };
+    }
   };
 
-  const { styles, icon } = variantConfig[variant];
+  const { styles, icon } = getVariantConfig(variant);
 
   return (
     <span
-      className={`inline-flex items-center rounded-full tracking-wide select-none ${sizeStyles} ${styles} ${className}`}
+      className={`inline-flex items-center rounded select-none tracking-tight ${sizeStyles} ${styles} ${className}`}
     >
       {showIcon && icon}
       <span>{children}</span>

@@ -10,7 +10,7 @@ export interface ToastProps {
   duration?: number;
 }
 
-export function Toast({ type, message, onClose, duration = 5000 }: ToastProps) {
+export function Toast({ type, message, onClose, duration = 4000 }: ToastProps) {
   useEffect(() => {
     if (duration > 0) {
       const timer = setTimeout(onClose, duration);
@@ -20,23 +20,23 @@ export function Toast({ type, message, onClose, duration = 5000 }: ToastProps) {
 
   const config = {
     success: {
-      bg: "bg-slate-900 border-emerald-500/40 text-emerald-300",
-      icon: <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" aria-hidden="true" />,
+      border: "border-l-[3px] border-l-[var(--success)]",
+      icon: <CheckCircle2 className="w-4 h-4 text-[var(--success-text)] shrink-0" aria-hidden="true" />,
       role: "status",
     },
     error: {
-      bg: "bg-slate-900 border-rose-500/40 text-rose-300",
-      icon: <XCircle className="w-5 h-5 text-rose-400 shrink-0" aria-hidden="true" />,
+      border: "border-l-[3px] border-l-[var(--danger)]",
+      icon: <XCircle className="w-4 h-4 text-[var(--danger-text)] shrink-0" aria-hidden="true" />,
       role: "alert",
     },
     warning: {
-      bg: "bg-slate-900 border-amber-500/40 text-amber-300",
-      icon: <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" aria-hidden="true" />,
+      border: "border-l-[3px] border-l-[var(--warning)]",
+      icon: <AlertCircle className="w-4 h-4 text-[var(--warning-text)] shrink-0" aria-hidden="true" />,
       role: "alert",
     },
     info: {
-      bg: "bg-slate-900 border-indigo-500/40 text-indigo-300",
-      icon: <Info className="w-5 h-5 text-indigo-400 shrink-0" aria-hidden="true" />,
+      border: "border-l-[3px] border-l-[var(--info)]",
+      icon: <Info className="w-4 h-4 text-[var(--info-text)] shrink-0" aria-hidden="true" />,
       role: "status",
     },
   }[type];
@@ -45,19 +45,19 @@ export function Toast({ type, message, onClose, duration = 5000 }: ToastProps) {
     <div
       role={config.role}
       aria-live="polite"
-      className={`fixed bottom-5 right-5 z-50 flex items-center gap-3 px-4 py-3 rounded-xl border shadow-2xl shadow-black/60 max-w-md backdrop-blur-md animate-in slide-in-from-bottom-3 duration-200 ${config.bg}`}
+      className={`fixed bottom-4 right-4 z-50 flex items-center gap-2.5 px-3.5 py-2.5 rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] shadow-lg max-w-sm animate-in slide-in-from-bottom-2 duration-150 ${config.border}`}
     >
       {config.icon}
-      <p className="text-xs md:text-sm font-medium text-slate-200 leading-snug flex-1">
+      <p className="text-xs font-medium leading-snug flex-1">
         {message}
       </p>
       <button
         type="button"
         onClick={onClose}
-        className="p-1 text-slate-400 hover:text-slate-100 rounded-lg hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+        className="p-0.5 text-[var(--text-muted)] hover:text-[var(--text)] rounded transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
         aria-label="Dismiss notification"
       >
-        <X className="w-4 h-4" aria-hidden="true" />
+        <X className="w-3.5 h-3.5" aria-hidden="true" />
       </button>
     </div>
   );
