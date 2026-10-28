@@ -182,6 +182,25 @@ export default function SecurityConsole() {
     ethereum.on("chainChanged", handleChainChanged);
     ethereum.on("accountsChanged", handleAccountsChanged);
 
+    // Only restore connection if user explicitly clicked Connect Wallet in this app before
+    const wasUserConnected =
+      typeof window !== "undefined" &&
+      localStorage.getItem("mg_wallet_user_connected") === "true";
+
+    if (wasUserConnected) {
+      ethereum
+        .request({ method: "eth_accounts" })
+        .then((accounts: string[]) => {
+          if (accounts && accounts.length > 0) {
+            setWalletAddress(accounts[0] as `0x${string}`);
+            ethereum.request({ method: "eth_chainId" }).then((cidHex: string) => {
+              setWalletChainId(parseInt(cidHex, 16));
+            });
+          }
+        })
+        .catch(() => {});
+    }
+
     return () => {
       if (ethereum.removeListener) {
         ethereum.removeListener("chainChanged", handleChainChanged);
@@ -217,12 +236,15 @@ export default function SecurityConsole() {
     }
   };
 
-  // Connect Web3 Wallet
+  // Connect Web3 Wallet explicitly
   const handleConnectWallet = async () => {
     try {
       const { address, chainId } = await connectInjectedWallet();
       setWalletAddress(address);
       setWalletChainId(chainId);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("mg_wallet_user_connected", "true");
+      }
       showToast("success", `Wallet connected: ${address.slice(0, 6)}...${address.slice(-4)}`);
 
       // Discover Smart Accounts owned by this wallet
@@ -235,6 +257,17 @@ export default function SecurityConsole() {
     } catch (err: any) {
       showToast("error", err.message || "Failed to connect wallet");
     }
+  };
+
+  // Disconnect Web3 Wallet explicitly
+  const handleDisconnectWallet = () => {
+    setWalletAddress(null);
+    setWalletChainId(null);
+    setUserSmartAccounts([]);
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("mg_wallet_user_connected");
+    }
+    showToast("info", "Wallet disconnected");
   };
 
   // Deploy Smart Account via Factory
@@ -343,6 +376,7 @@ export default function SecurityConsole() {
       walletAddress={walletAddress}
       walletChainId={walletChainId}
       onConnectWallet={handleConnectWallet}
+      onDisconnectWallet={handleDisconnectWallet}
       userSmartAccounts={userSmartAccounts}
       activeSmartAccount={displaySmartAccount}
       onSelectSmartAccount={(acc) => {
