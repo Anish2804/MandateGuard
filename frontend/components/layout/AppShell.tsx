@@ -525,11 +525,17 @@ export function AppShell({
 
                   <div className="flex justify-between items-center text-[11px] mt-2">
                     <span className="text-[var(--text-muted)]">Vault Balance:</span>
-                    <span className="font-mono font-medium text-[var(--success-text)] tabular-nums">
-                      {smartAccountBalance !== null
-                        ? `$${smartAccountBalance.toFixed(2)} USDC`
-                        : "RPC Offline"}
-                    </span>
+                    {isMismatch ? (
+                      <span className="font-sans text-[11px] font-medium text-[var(--warning-text)]">
+                        Wrong network
+                      </span>
+                    ) : (
+                      <span className="font-mono font-medium text-[var(--success-text)] tabular-nums">
+                        {smartAccountBalance !== null
+                          ? `$${smartAccountBalance.toFixed(2)} USDC`
+                          : "RPC Offline"}
+                      </span>
+                    )}
                   </div>
                 </div>
 
