@@ -26,12 +26,11 @@ import {
   PaymentRequestItem,
   PaymentVerdict,
   Mandate,
-  MOCK_USDC_ADDR,
-  CHAIN_ID,
   requestAuthorization,
   settlePayment,
 } from "../../lib/api";
 import { executePaymentViaWallet } from "../../lib/web3";
+import { getContractAddresses, DEFAULT_CHAIN_ID } from "../../lib/contracts";
 
 export interface RequestsViewProps {
   requests: PaymentRequestItem[];
@@ -105,14 +104,20 @@ export function RequestsView({
     setSettledSuccess(false);
 
     try {
+      const currentChainId = walletChainId || DEFAULT_CHAIN_ID;
+      const currentMandate = mandates.find((m) => m.id === selectedMandateId);
+      const addresses = getContractAddresses(currentChainId);
+      const tokenToUse = currentMandate?.token || addresses.usdc;
+      const chainToUse = currentMandate?.chain_id || currentChainId;
+
       const idempotencyKey = `req_${Date.now()}_${Math.random().toString(36).substring(7)}`;
       const verdict = await requestAuthorization({
         mandate_id: selectedMandateId,
         account: activeSmartAccount,
-        token: MOCK_USDC_ADDR,
+        token: tokenToUse,
         recipient: recipient.trim(),
         amount: Number(amount),
-        chain_id: CHAIN_ID,
+        chain_id: chainToUse,
         idempotency_key: idempotencyKey,
       });
 
@@ -406,7 +411,14 @@ export function RequestsView({
               <select
                 id="sim-mandate"
                 value={selectedMandateId}
-                onChange={(e) => setSelectedMandateId(e.target.value)}
+                onChange={(e) => {
+                  const mId = e.target.value;
+                  setSelectedMandateId(mId);
+                  const selected = mandates.find((m) => m.id === mId);
+                  if (selected?.recipient) {
+                    setRecipient(selected.recipient);
+                  }
+                }}
                 className="w-full bg-[var(--surface)] border border-[var(--border)] rounded px-2.5 py-1.5 text-xs text-[var(--text)] focus:outline-none focus:border-[var(--border-strong)]"
               >
                 {mandates.map((m) => (

@@ -20,7 +20,7 @@ import { AddressChip } from "../ui/AddressChip";
 import { EmptyState } from "../ui/EmptyState";
 import { PaymentRequestItem } from "../../lib/api";
 import { fetchTransactionReceipt } from "../../lib/web3";
-import { SUPPORTED_CHAINS } from "../../lib/contracts";
+import { SUPPORTED_CHAINS, DEFAULT_CHAIN_ID } from "../../lib/contracts";
 
 export interface TransactionsViewProps {
   requests: PaymentRequestItem[];
@@ -41,7 +41,7 @@ export function TransactionsView({
 
   const chainConfig =
     SUPPORTED_CHAINS[walletChainId as keyof typeof SUPPORTED_CHAINS] ||
-    SUPPORTED_CHAINS[31337];
+    SUPPORTED_CHAINS[84532];
 
   const formatTime = (val?: string | null) => {
     if (!val) return "-";
@@ -73,7 +73,7 @@ export function TransactionsView({
     try {
       const receipt = await fetchTransactionReceipt(
         t.tx_hash as `0x${string}`,
-        walletChainId || 31337
+        walletChainId || DEFAULT_CHAIN_ID
       );
       setReceiptData(receipt);
     } catch (err) {

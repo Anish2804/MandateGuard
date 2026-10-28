@@ -1,10 +1,33 @@
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "http://127.0.0.1:8545";
-export const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID || 31337);
+export const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (typeof window !== "undefined" && window.location.hostname.includes("localhost")
+    ? "http://localhost:8000"
+    : "https://mandateguard-api.onrender.com");
+
+export const RPC_URL =
+  process.env.NEXT_PUBLIC_RPC_URL ||
+  (typeof window !== "undefined" && window.location.hostname.includes("localhost")
+    ? "http://127.0.0.1:8545"
+    : "https://sepolia.base.org");
+
+export const CHAIN_ID = Number(
+  process.env.NEXT_PUBLIC_CHAIN_ID ||
+  (typeof window !== "undefined" && window.location.hostname.includes("localhost")
+    ? 31337
+    : 84532)
+);
+
 export const SMART_ACCOUNT_ADDR =
-  process.env.NEXT_PUBLIC_SMART_ACCOUNT_ADDRESS || "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
+  process.env.NEXT_PUBLIC_SMART_ACCOUNT_ADDRESS ||
+  (typeof window !== "undefined" && window.location.hostname.includes("localhost")
+    ? "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+    : "0xB07e049cc3245e8a765bA9bfb537CF5D5fFd4D68");
+
 export const MOCK_USDC_ADDR =
-  process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS || "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+  process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS ||
+  (typeof window !== "undefined" && window.location.hostname.includes("localhost")
+    ? "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+    : "0x9CA71737B76EE51d2366C53CC8CdF21DC5246097");
 
 export interface Mandate {
   id: string;
@@ -195,8 +218,12 @@ export async function fetchAuditEvents(): Promise<AuditEventItem[]> {
 
 // --- Direct Local EVM RPC Helpers ---
 
-export async function rpcCall(method: string, params: any[] = []): Promise<any> {
-  const res = await fetch(RPC_URL, {
+export async function rpcCall(
+  method: string,
+  params: any[] = [],
+  rpcUrl: string = RPC_URL
+): Promise<any> {
+  const res = await fetch(rpcUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -220,28 +247,32 @@ export interface OnChainBalances {
 
 export async function getOnChainBalances(
   merchantAddr: string,
-  targetAccount: string = SMART_ACCOUNT_ADDR
+  targetAccount: string = SMART_ACCOUNT_ADDR,
+  tokenAddr: string = MOCK_USDC_ADDR,
+  rpcEndpoint: string = RPC_URL
 ): Promise<OnChainBalances> {
   try {
     // 0x70a08231 = balanceOf(address)
     const cleanAccount = (targetAccount || SMART_ACCOUNT_ADDR).toLowerCase().replace("0x", "").padStart(64, "0");
-    const accountBalHex = await rpcCall("eth_call", [
-      { to: MOCK_USDC_ADDR, data: `0x70a08231${cleanAccount}` },
-      "latest",
-    ]);
+    const accountBalHex = await rpcCall(
+      "eth_call",
+      [{ to: tokenAddr || MOCK_USDC_ADDR, data: `0x70a08231${cleanAccount}` }, "latest"],
+      rpcEndpoint
+    );
     const smartAccountBal = parseInt(accountBalHex || "0x0", 16) / 1e6;
 
     let merchantBal: number | null = 0;
     if (merchantAddr && merchantAddr.startsWith("0x")) {
       const cleanMerchant = merchantAddr.toLowerCase().replace("0x", "").padStart(64, "0");
-      const merchantBalHex = await rpcCall("eth_call", [
-        { to: MOCK_USDC_ADDR, data: `0x70a08231${cleanMerchant}` },
-        "latest",
-      ]);
+      const merchantBalHex = await rpcCall(
+        "eth_call",
+        [{ to: tokenAddr || MOCK_USDC_ADDR, data: `0x70a08231${cleanMerchant}` }, "latest"],
+        rpcEndpoint
+      );
       merchantBal = parseInt(merchantBalHex || "0x0", 16) / 1e6;
     }
 
-    const blockNumHex = await rpcCall("eth_blockNumber", []);
+    const blockNumHex = await rpcCall("eth_blockNumber", [], rpcEndpoint);
     const blockNumber = parseInt(blockNumHex, 16);
 
     return { smartAccountBal, merchantBal, blockNumber, error: null };

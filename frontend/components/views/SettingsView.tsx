@@ -16,10 +16,9 @@ import { Badge } from "../ui/Badge";
 import { AddressChip } from "../ui/AddressChip";
 import {
   SUPPORTED_CHAINS,
-  FACTORY_ADDRESS,
-  MOCK_USDC_ADDRESS,
+  getContractAddresses,
 } from "../../lib/contracts";
-import { RPC_URL, CHAIN_ID, rpcCall } from "../../lib/api";
+import { CHAIN_ID, rpcCall } from "../../lib/api";
 import { switchWalletNetwork } from "../../lib/web3";
 
 export interface SettingsViewProps {
@@ -37,6 +36,12 @@ export function SettingsView({
   onRefresh,
   showToast,
 }: SettingsViewProps) {
+  const currentChainId = walletChainId || CHAIN_ID;
+  const currentChain =
+    SUPPORTED_CHAINS[currentChainId as keyof typeof SUPPORTED_CHAINS] ||
+    SUPPORTED_CHAINS[84532];
+  const addresses = getContractAddresses(currentChainId);
+
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [isPinging, setIsPinging] = useState(false);
   const [blockHeight, setBlockHeight] = useState<number | null>(null);
@@ -45,7 +50,7 @@ export function SettingsView({
     setIsPinging(true);
     const start = performance.now();
     try {
-      const res = await rpcCall("eth_blockNumber", []);
+      const res = await rpcCall("eth_blockNumber", [], currentChain.rpcUrl);
       const duration = Math.round(performance.now() - start);
       setLatencyMs(duration);
       setBlockHeight(parseInt(res, 16));
@@ -114,7 +119,7 @@ export function SettingsView({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-mono text-xs">
           <div className="p-3.5 rounded-md bg-[var(--surface-raised)] border border-[var(--border)] space-y-1">
             <span className="text-[11px] text-[var(--text-muted)] font-sans block">Endpoint URL</span>
-            <span className="text-[var(--text)] truncate block select-all font-semibold">{RPC_URL}</span>
+            <span className="text-[var(--text)] truncate block select-all font-semibold">{currentChain.rpcUrl}</span>
           </div>
 
           <div className="p-3.5 rounded-md bg-[var(--surface-raised)] border border-[var(--border)] space-y-1">
@@ -217,7 +222,7 @@ export function SettingsView({
               address={activeSmartAccount}
               truncateLength={6}
               showExplorer={true}
-              explorerUrl={SUPPORTED_CHAINS[walletChainId as keyof typeof SUPPORTED_CHAINS]?.explorer}
+              explorerUrl={currentChain.explorer}
             />
           </div>
 
@@ -226,13 +231,13 @@ export function SettingsView({
               <span className="text-[11px] font-sans text-[var(--text-muted)] block">
                 Account Factory (MandateGuardFactory)
               </span>
-              <span className="text-[var(--text)] mt-0.5 block">{FACTORY_ADDRESS}</span>
+              <span className="text-[var(--text)] mt-0.5 block">{addresses.factory}</span>
             </div>
             <AddressChip
-              address={FACTORY_ADDRESS}
+              address={addresses.factory}
               truncateLength={6}
               showExplorer={true}
-              explorerUrl={SUPPORTED_CHAINS[walletChainId as keyof typeof SUPPORTED_CHAINS]?.explorer}
+              explorerUrl={currentChain.explorer}
             />
           </div>
 
@@ -241,13 +246,13 @@ export function SettingsView({
               <span className="text-[11px] font-sans text-[var(--text-muted)] block">
                 Settlement Token (MockUSDC)
               </span>
-              <span className="text-[var(--text)] mt-0.5 block">{MOCK_USDC_ADDRESS}</span>
+              <span className="text-[var(--text)] mt-0.5 block">{addresses.usdc}</span>
             </div>
             <AddressChip
-              address={MOCK_USDC_ADDRESS}
+              address={addresses.usdc}
               truncateLength={6}
               showExplorer={true}
-              explorerUrl={SUPPORTED_CHAINS[walletChainId as keyof typeof SUPPORTED_CHAINS]?.explorer}
+              explorerUrl={currentChain.explorer}
             />
           </div>
         </div>

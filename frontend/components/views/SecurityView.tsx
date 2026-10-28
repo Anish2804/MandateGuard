@@ -18,8 +18,8 @@ import { Badge } from "../ui/Badge";
 import { Modal } from "../ui/Modal";
 import { AddressChip } from "../ui/AddressChip";
 import { emergencyWithdrawTokenViaWallet } from "../../lib/web3";
-import { MOCK_USDC_ADDR, SystemHealth } from "../../lib/api";
-import { FACTORY_ADDRESS, SUPPORTED_CHAINS } from "../../lib/contracts";
+import { SystemHealth } from "../../lib/api";
+import { FACTORY_ADDRESS, SUPPORTED_CHAINS, DEFAULT_CHAIN_ID } from "../../lib/contracts";
 
 export interface SecurityViewProps {
   health: SystemHealth | null;
@@ -48,7 +48,7 @@ export function SecurityView({
 
   const chainConfig =
     SUPPORTED_CHAINS[walletChainId as keyof typeof SUPPORTED_CHAINS] ||
-    SUPPORTED_CHAINS[31337];
+    SUPPORTED_CHAINS[84532];
 
   const handleEmergencyWithdraw = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,11 +69,11 @@ export function SecurityView({
     try {
       const txHash = await emergencyWithdrawTokenViaWallet(
         activeSmartAccount as `0x${string}`,
-        MOCK_USDC_ADDR as `0x${string}`,
+        chainConfig.mockUsdc as `0x${string}`,
         recoveryRecipient.trim() as `0x${string}`,
         Number(withdrawAmount),
         walletAddress,
-        walletChainId || 31337
+        walletChainId || DEFAULT_CHAIN_ID
       );
 
       showToast("success", `Emergency withdrawal submitted! Tx Hash: ${txHash.slice(0, 10)}...`);
@@ -158,7 +158,7 @@ export function SecurityView({
             </div>
             <div className="flex justify-between items-center py-1 border-b border-[var(--border)]">
               <span className="text-[var(--text-muted)] font-sans">Chain ID</span>
-              <span className="text-[var(--text)] font-semibold tabular-nums">{health?.chain_id ?? 31337}</span>
+              <span className="text-[var(--text)] font-semibold tabular-nums">{health?.chain_id ?? DEFAULT_CHAIN_ID}</span>
             </div>
             <div className="flex justify-between items-center py-1">
               <span className="text-[var(--text-muted)] font-sans">Verifying Contract</span>
@@ -262,7 +262,7 @@ export function SecurityView({
               id="emg-token"
               type="text"
               readOnly
-              value={MOCK_USDC_ADDR}
+              value={chainConfig.mockUsdc}
               className="w-full bg-[var(--surface-raised)] border border-[var(--border)] rounded-md px-3 py-2 text-xs font-mono text-[var(--text-muted)] select-none cursor-not-allowed"
             />
           </div>

@@ -12,19 +12,17 @@ import { baseSepolia } from "viem/chains";
 import {
   SUPPORTED_CHAINS,
   DEFAULT_CHAIN_ID,
-  FACTORY_ADDRESS,
   FACTORY_ABI,
-  MOCK_USDC_ADDRESS,
   ERC20_ABI,
   SMART_ACCOUNT_ABI,
-  DEFAULT_SMART_ACCOUNT_ADDRESS,
+  getContractAddresses,
 } from "./contracts";
 
 // Public RPC client for read-only queries
 export function getPublicClient(chainId: number = DEFAULT_CHAIN_ID) {
   const chainConfig =
     SUPPORTED_CHAINS[chainId as keyof typeof SUPPORTED_CHAINS] ||
-    SUPPORTED_CHAINS[31337];
+    SUPPORTED_CHAINS[84532];
 
   return createPublicClient({
     transport: http(chainConfig.rpcUrl),
@@ -112,9 +110,10 @@ export async function getFactoryAccountsForOwner(
   chainId: number = DEFAULT_CHAIN_ID
 ): Promise<`0x${string}`[]> {
   try {
+    const addresses = getContractAddresses(chainId);
     const client = getPublicClient(chainId);
     const accounts = (await client.readContract({
-      address: FACTORY_ADDRESS,
+      address: addresses.factory,
       abi: FACTORY_ABI,
       functionName: "getAccountsByOwner",
       args: [ownerAddress],
@@ -129,23 +128,26 @@ export async function getFactoryAccountsForOwner(
 
 // Deploy a new isolated Smart Account for the connected user via Factory
 export async function deploySmartAccountViaWallet(
-  ownerAddress: `0x${string}`
+  ownerAddress: `0x${string}`,
+  chainId: number = DEFAULT_CHAIN_ID
 ): Promise<{ txHash: Hash; accountAddress?: `0x${string}` }> {
   if (!hasInjectedProvider()) {
     throw new Error("No Web3 wallet detected");
   }
 
-  await switchWalletNetwork(84532).catch(() => null);
+  await switchWalletNetwork(chainId).catch(() => null);
 
   const ethereum = (window as any).ethereum;
+  const targetChain = chainId === 84532 ? baseSepolia : undefined;
   const walletClient = createWalletClient({
     account: ownerAddress,
-    chain: baseSepolia,
+    chain: targetChain,
     transport: custom(ethereum),
   });
 
+  const addresses = getContractAddresses(chainId);
   const txHash = await walletClient.writeContract({
-    address: FACTORY_ADDRESS,
+    address: addresses.factory,
     abi: FACTORY_ABI,
     functionName: "createAccount",
   });
@@ -157,25 +159,28 @@ export async function deploySmartAccountViaWallet(
 export async function claimFaucetTokens(
   recipient: `0x${string}`,
   amountUsdc: number = 1000,
-  userWallet: `0x${string}`
+  userWallet: `0x${string}`,
+  chainId: number = DEFAULT_CHAIN_ID
 ): Promise<Hash> {
   if (!hasInjectedProvider()) {
     throw new Error("No Web3 wallet detected");
   }
 
-  await switchWalletNetwork(84532).catch(() => null);
+  await switchWalletNetwork(chainId).catch(() => null);
 
   const ethereum = (window as any).ethereum;
+  const targetChain = chainId === 84532 ? baseSepolia : undefined;
   const walletClient = createWalletClient({
     account: userWallet,
-    chain: baseSepolia,
+    chain: targetChain,
     transport: custom(ethereum),
   });
 
   const amountUnits = parseUnits(amountUsdc.toString(), 6);
+  const addresses = getContractAddresses(chainId);
 
   const txHash = await walletClient.writeContract({
-    address: MOCK_USDC_ADDRESS,
+    address: addresses.usdc,
     abi: ERC20_ABI,
     functionName: "mint",
     args: [recipient, amountUnits],
@@ -190,9 +195,10 @@ export async function getTokenBalance(
   chainId: number = DEFAULT_CHAIN_ID
 ): Promise<number> {
   try {
+    const addresses = getContractAddresses(chainId);
     const client = getPublicClient(chainId);
     const balUnits = (await client.readContract({
-      address: MOCK_USDC_ADDRESS,
+      address: addresses.usdc,
       abi: ERC20_ABI,
       functionName: "balanceOf",
       args: [accountAddress],

@@ -24,7 +24,8 @@ import { Badge } from "../ui/Badge";
 import { Drawer } from "../ui/Drawer";
 import { AddressChip } from "../ui/AddressChip";
 import { EmptyState } from "../ui/EmptyState";
-import { Mandate, MOCK_USDC_ADDR } from "../../lib/api";
+import { Mandate } from "../../lib/api";
+import { getContractAddresses, DEFAULT_CHAIN_ID } from "../../lib/contracts";
 
 export interface MandatesViewProps {
   mandates: Mandate[];
@@ -40,6 +41,7 @@ export interface MandatesViewProps {
     recipient?: string | null;
     max_amount_per_tx: number;
     max_cumulative_amount: number;
+    chain_id?: number;
     expiry: number;
   }) => Promise<Mandate>;
   onRevokeMandate: (mandateId: string) => Promise<Mandate>;
@@ -136,15 +138,18 @@ export function MandatesView({
     try {
       const currentTimestamp = Math.floor(Date.now() / 1000);
       const expiryTimestamp = currentTimestamp + form.expiryDays * 86400;
+      const currentChainId = walletChainId || DEFAULT_CHAIN_ID;
+      const addresses = getContractAddresses(currentChainId);
 
       await onCreateMandate({
         title: form.title.trim(),
         account: activeSmartAccount,
         agent: form.agent.trim(),
-        token: MOCK_USDC_ADDR,
+        token: addresses.usdc,
         recipient: form.allowAnyRecipient ? null : form.recipient.trim() || null,
         max_amount_per_tx: Number(form.max_amount_per_tx),
         max_cumulative_amount: Number(form.max_cumulative_amount),
+        chain_id: currentChainId,
         expiry: expiryTimestamp,
       });
 

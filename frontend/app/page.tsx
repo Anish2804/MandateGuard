@@ -41,6 +41,7 @@ import {
   registerMandateOnChain,
   revokeMandateOnChain,
 } from "../lib/web3";
+import { SUPPORTED_CHAINS } from "../lib/contracts";
 
 export default function SecurityConsole() {
   const [currentRoute, setCurrentRoute] = useState<NavRoute>("overview");
@@ -94,8 +95,18 @@ export default function SecurityConsole() {
       setAuditEvents(aud);
       setApiKeys(keys);
 
+      const currentChain = walletChainId || CHAIN_ID;
+      const chainConfig =
+        SUPPORTED_CHAINS[currentChain as keyof typeof SUPPORTED_CHAINS] ||
+        SUPPORTED_CHAINS[84532];
+
       // Query on-chain balance for the active smart account without fake fallbacks
-      const bals = await getOnChainBalances("", activeSmartAccount);
+      const bals = await getOnChainBalances(
+        "",
+        activeSmartAccount,
+        chainConfig.mockUsdc,
+        chainConfig.rpcUrl
+      );
       setSmartAccountBalance(bals.smartAccountBal);
       setRpcError(bals.error || null);
     } catch (err: any) {
@@ -103,7 +114,7 @@ export default function SecurityConsole() {
     } finally {
       setIsRefreshing(false);
     }
-  }, [activeSmartAccount]);
+  }, [activeSmartAccount, walletChainId]);
 
   useEffect(() => {
     loadData();
@@ -137,12 +148,13 @@ export default function SecurityConsole() {
     }
     setIsDeployingAccount(true);
     try {
+      const currentChain = walletChainId || CHAIN_ID;
       showToast("info", "Deploying isolated Smart Account via MandateGuardFactory...");
-      const { txHash } = await deploySmartAccountViaWallet(walletAddress);
+      const { txHash } = await deploySmartAccountViaWallet(walletAddress, currentChain);
       showToast("success", `Account deployed on-chain! Tx: ${txHash.slice(0, 10)}...`);
 
       setTimeout(async () => {
-        const accounts = await getFactoryAccountsForOwner(walletAddress, walletChainId || CHAIN_ID);
+        const accounts = await getFactoryAccountsForOwner(walletAddress, currentChain);
         setUserSmartAccounts(accounts);
         if (accounts.length > 0) {
           setActiveSmartAccount(accounts[accounts.length - 1]);
@@ -164,9 +176,10 @@ export default function SecurityConsole() {
     }
     setIsClaimingFaucet(true);
     try {
+      const currentChain = walletChainId || CHAIN_ID;
       const target = (activeSmartAccount || walletAddress) as `0x${string}`;
       showToast("info", `Minting 1,000 USDC to ${target.slice(0, 8)}...`);
-      const txHash = await claimFaucetTokens(target, 1000, walletAddress);
+      const txHash = await claimFaucetTokens(target, 1000, walletAddress, currentChain);
       showToast("success", `Claimed 1,000 USDC! Tx: ${txHash.slice(0, 10)}...`);
       setTimeout(loadData, 2500);
     } catch (err: any) {
@@ -326,6 +339,7 @@ export default function SecurityConsole() {
         <VerdictView
           activeSmartAccount={activeSmartAccount}
           defaultAuthorizerSigner={health?.authorizer_signer || null}
+          walletChainId={walletChainId}
         />
       )}
 

@@ -32,6 +32,7 @@ import { Badge } from "../ui/Badge";
 import { CommandPalette } from "../ui/CommandPalette";
 import { useTheme, Theme } from "../theme/ThemeProvider";
 import { SUPPORTED_CHAINS } from "../../lib/contracts";
+import { switchWalletNetwork } from "../../lib/web3";
 
 export type NavRoute =
   | "overview"
@@ -240,7 +241,7 @@ export function AppShell({
 
   const activeChain =
     SUPPORTED_CHAINS[walletChainId as keyof typeof SUPPORTED_CHAINS] ||
-    SUPPORTED_CHAINS[31337];
+    SUPPORTED_CHAINS[84532];
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -322,9 +323,13 @@ export function AppShell({
                   <button
                     key={chain.id}
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       setNetworkDropdownOpen(false);
-                      onRouteChange("settings");
+                      try {
+                        await switchWalletNetwork(chain.id);
+                      } catch {
+                        onRouteChange("settings");
+                      }
                     }}
                     className={`w-full flex items-center justify-between px-2.5 py-1.5 text-xs rounded text-left transition-colors ${
                       chain.id === activeChain.id

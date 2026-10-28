@@ -371,7 +371,7 @@ export function OverviewView({
             <div className="flex items-center justify-between py-1 border-b border-[var(--border)]">
               <span className="text-[var(--text-muted)]">Chain ID</span>
               <span className="font-mono font-medium text-[var(--text)]">
-                {health?.chain_id ?? "31337"}
+                {health?.chain_id ?? "84532"}
               </span>
             </div>
 

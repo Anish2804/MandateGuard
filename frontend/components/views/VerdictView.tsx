@@ -20,22 +20,28 @@ import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
 import { AddressChip } from "../ui/AddressChip";
 import { Modal } from "../ui/Modal";
-import { verifyVerdictSignature, MOCK_USDC_ADDR, CHAIN_ID } from "../../lib/api";
+import { verifyVerdictSignature } from "../../lib/api";
+import { getContractAddresses, DEFAULT_CHAIN_ID } from "../../lib/contracts";
 
 export interface VerdictViewProps {
   activeSmartAccount: string;
   defaultAuthorizerSigner: string | null;
+  walletChainId?: number | null;
 }
 
 export function VerdictView({
   activeSmartAccount,
   defaultAuthorizerSigner,
+  walletChainId,
 }: VerdictViewProps) {
+  const currentChainId = walletChainId || DEFAULT_CHAIN_ID;
+  const addresses = getContractAddresses(currentChainId);
+
   const [form, setForm] = useState({
     verdict: 1,
-    chainId: CHAIN_ID,
-    account: activeSmartAccount,
-    token: MOCK_USDC_ADDR,
+    chainId: currentChainId,
+    account: activeSmartAccount as string,
+    token: addresses.usdc as string,
     recipient: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
     amount: 25,
     mandateId: "0x0000000000000000000000000000000000000000000000000000000000000001",
