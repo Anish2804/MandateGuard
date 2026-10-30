@@ -5,9 +5,9 @@ export const SUPPORTED_CHAINS = {
     rpcUrl: "https://sepolia.base.org",
     currency: "ETH",
     explorer: "https://sepolia.basescan.org",
-    factory: "0xc1715490738Ec42fc975B704Cb1542edf46368C9" as `0x${string}`,
-    mockUsdc: "0x9CA71737B76EE51d2366C53CC8CdF21DC5246097" as `0x${string}`,
-    defaultSmartAccount: "0xB07e049cc3245e8a765bA9bfb537CF5D5fFd4D68" as `0x${string}`,
+    factory: "0x3F577D49773Fc45526181534f8E67B8CD806b176" as `0x${string}`,
+    mockUsdc: "0xa25C3a6A13F32Ac8142CDc232164f16311640dF7" as `0x${string}`,
+    defaultSmartAccount: "0x99F586Cc654DBcf073cf9593e8ec4C4037d85936" as `0x${string}`,
   },
   31337: {
     id: 31337,
@@ -24,13 +24,13 @@ export const SUPPORTED_CHAINS = {
 export const DEFAULT_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID || 84532);
 
 export const FACTORY_ADDRESS = (process.env.NEXT_PUBLIC_FACTORY_ADDRESS ||
-  "0xc1715490738Ec42fc975B704Cb1542edf46368C9") as `0x${string}`;
+  "0x3F577D49773Fc45526181534f8E67B8CD806b176") as `0x${string}`;
 
 export const MOCK_USDC_ADDRESS = (process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS ||
-  "0x9CA71737B76EE51d2366C53CC8CdF21DC5246097") as `0x${string}`;
+  "0xa25C3a6A13F32Ac8142CDc232164f16311640dF7") as `0x${string}`;
 
 export const DEFAULT_SMART_ACCOUNT_ADDRESS = (process.env.NEXT_PUBLIC_SMART_ACCOUNT_ADDRESS ||
-  "0xB07e049cc3245e8a765bA9bfb537CF5D5fFd4D68") as `0x${string}`;
+  "0x99F586Cc654DBcf073cf9593e8ec4C4037d85936") as `0x${string}`;
 
 export function getContractAddresses(chainId: number = DEFAULT_CHAIN_ID) {
   const config =
