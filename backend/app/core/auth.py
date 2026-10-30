@@ -4,6 +4,7 @@ from fastapi.security import APIKeyHeader
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.tenant import ApiKeyModel
 
@@ -16,10 +17,16 @@ async def verify_agent_api_key(
     """
     Validates the X-API-Key header.
     Returns the associated ApiKeyModel if valid and active.
-    If header is absent, returns None (allowing unauthenticated public/local fallback).
+    If REQUIRE_API_KEY is True and header is absent, raises HTTP 401 Unauthorized.
+    If REQUIRE_API_KEY is False and header is absent, returns None (local dev mode).
     If header is provided but invalid, raises HTTP 401.
     """
     if not raw_api_key:
+        if settings.REQUIRE_API_KEY:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing required X-API-Key authentication header"
+            )
         return None
 
     key_hash = ApiKeyModel.hash_key(raw_api_key)

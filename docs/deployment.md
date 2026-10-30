@@ -57,6 +57,20 @@ Update `.env` with the newly deployed addresses:
 ```env
 CHAIN_ID=84532
 RPC_URL=https://sepolia.base.org
-SMART_ACCOUNT_ADDRESS=0xDeployedSmartAccountOnBaseSepolia
-MOCK_USDC_ADDRESS=0xDeployedMockUSDCOnBaseSepolia
+SMART_ACCOUNT_ADDRESS=0x99F586Cc654DBcf073cf9593e8ec4C4037d85936
+MOCK_USDC_ADDRESS=0xa25C3a6A13F32Ac8142CDc232164f16311640dF7
+FACTORY_ADDRESS=0x3F577D49773Fc45526181534f8E67B8CD806b176
 ```
+
+---
+
+## 3. Verified Base Sepolia Live Deployment (October 30, 2026)
+
+- **Network:** Base Sepolia (Chain ID `84532`)
+- **Deployer / Owner:** `0x9264Ac745C4d55435b483C76b1811bB726E7B77c`
+- **Smart Account (`MandateGuardAccount`):** [`0x99F586Cc654DBcf073cf9593e8ec4C4037d85936`](https://sepolia.basescan.org/address/0x99F586Cc654DBcf073cf9593e8ec4C4037d85936)
+- **Factory (`MandateGuardFactory`):** [`0x3F577D49773Fc45526181534f8E67B8CD806b176`](https://sepolia.basescan.org/address/0x3F577D49773Fc45526181534f8E67B8CD806b176)
+- **MockUSDC Token:** [`0xa25C3a6A13F32Ac8142CDc232164f16311640dF7`](https://sepolia.basescan.org/address/0xa25C3a6A13F32Ac8142CDc232164f16311640dF7)
+- **Authorizer Signer:** `0x70997970C51812dc3A010C7d01b50e0d17dc79C8`
+- **Sample Seed Mandate ID:** `0x81045690a5a041937002eebf7e54bd85cb48d48d2712836a743e39e9ba85e0b8`
+- **Account Initial Balance:** `50,000.00 mUSDC` ($50k funded for testing)

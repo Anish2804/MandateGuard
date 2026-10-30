@@ -269,7 +269,7 @@ export function SettingsView({
                 Account Factory (MandateGuardFactory)
               </span>
               <span className="text-xs font-medium text-[var(--text)] mt-0.5 block">
-                Deterministic ERC-4337 smart account factory
+                Deterministic EIP-712 smart account factory
               </span>
             </div>
             <AddressChip

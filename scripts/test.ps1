@@ -8,7 +8,7 @@ Write-Host "====================================================================
 # 1. Smart Contract Tests
 Write-Host "`n[1/3] Running Smart Contract Tests (Foundry via WSL)..." -ForegroundColor Yellow
 try {
-    wsl -d Ubuntu-D -e bash -c "cd /mnt/e/MandateGuard/contracts && ~/.foundry/bin/forge test -vvv"
+    wsl bash -c "cd /mnt/e/MandateGuard/contracts && ~/.foundry/bin/forge test -vvv"
     Write-Host "[+] Smart contract tests passed successfully." -ForegroundColor Green
 } catch {
     Write-Host "[-] Smart contract tests failed!" -ForegroundColor Red

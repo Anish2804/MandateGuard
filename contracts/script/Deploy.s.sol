@@ -8,20 +8,14 @@ import "../src/MockUSDC.sol";
 
 contract DeployScript is Script {
     function run() external returns (MockUSDC usdc, MandateGuardAccount account, MandateGuardFactory factory) {
-        // Read deployer private key from environment or fallback to Anvil Account #0
-        uint256 deployerKey = vm.envOr(
-            "DEPLOYER_PRIVATE_KEY",
-            uint256(0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80)
-        );
-        address deployer = vm.addr(deployerKey);
+        vm.startBroadcast();
+        address deployer = msg.sender;
 
-        // Read authorizer signer address from environment or fallback to Anvil Account #1
+        // Read authorizer signer address from environment or fallback to Anvil/backend authorizer
         address authorizer = vm.envOr(
             "AUTHORIZER_ADDRESS",
             address(0x70997970C51812dc3A010C7d01b50e0d17dc79C8)
         );
-
-        vm.startBroadcast(deployerKey);
 
         // 1. Deploy Mock USDC
         usdc = new MockUSDC();

@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     
     # Environment mode
     ENVIRONMENT: str = Field(default="development", description="'development', 'staging', 'production'")
+    REQUIRE_API_KEY: bool = Field(default=False, description="Require valid X-API-Key for /authorize (enforced in production)")
     
     # Policy defaults
     DEFAULT_EXPIRY_SECONDS: int = 3600  # 1 hour
@@ -50,6 +51,7 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_production_settings(self):
         if self.ENVIRONMENT.lower() == "production":
+            self.REQUIRE_API_KEY = True
             DEFAULT_TEST_KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
             if self.AUTHORIZER_PRIVATE_KEY.lower() == DEFAULT_TEST_KEY.lower():
                 raise ValueError("FATAL CONFIG ERROR: Insecure default Anvil authorizer key cannot be used in production.")

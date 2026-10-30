@@ -4,6 +4,8 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+import "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
@@ -13,7 +15,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * @dev Employs EIP-712 typed-data verification, single-use replay defense,
  *      and on-chain mandate registration and revocation.
  */
-contract MandateGuardAccount is ReentrancyGuard {
+contract MandateGuardAccount is ReentrancyGuard, IERC1271 {
     using SafeERC20 for IERC20;
 
     // --- Types & Enums ---
@@ -69,12 +71,20 @@ contract MandateGuardAccount is ReentrancyGuard {
 
     address public owner;
     address public authorizerSigner;
+    bool public isPaused;
 
     // Replay protection: authorizationId => hasBeenUsed
     mapping(bytes32 => bool) public usedAuthorizations;
 
     // On-chain mandate registry: mandateId => Mandate
     mapping(bytes32 => Mandate) public mandates;
+
+    // Session Key registry (Requirement 8): sessionKey => SessionKey
+    struct SessionKey {
+        uint48 validUntil;
+        bool isActive;
+    }
+    mapping(address => SessionKey) public sessionKeys;
 
     // --- Events ---
 
@@ -85,6 +95,9 @@ contract MandateGuardAccount is ReentrancyGuard {
         address token,
         uint256 amount
     );
+
+    event SessionKeyRegistered(address indexed sessionKey, uint48 validUntil);
+    event SessionKeyRevoked(address indexed sessionKey);
 
     event MandateRegistered(
         bytes32 indexed mandateId,
@@ -101,10 +114,14 @@ contract MandateGuardAccount is ReentrancyGuard {
     event AuthorizerSignerUpdated(address indexed oldSigner, address indexed newSigner);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event EmergencyWithdrawalExecuted(address indexed token, address indexed to, uint256 amount);
+    event AccountPaused();
+    event AccountUnpaused();
 
     // --- Custom Errors ---
 
     error Unauthorized();
+    error SessionKeyInvalid(address sessionKey);
+    error AccountPausedError();
     error DenyVerdictNotExecutable();
     error InvalidChainId(uint256 expected, uint256 actual);
     error InvalidAccount(address expected, address actual);
@@ -197,6 +214,52 @@ contract MandateGuardAccount is ReentrancyGuard {
         );
     }
 
+    // --- Session Key Management (Requirement 8) ---
+
+    /**
+     * @notice Registers an ephemeral session key with an expiration timestamp.
+     * @param sessionKey The address of the session signer.
+     * @param validUntil Unix timestamp until which the session key is valid.
+     */
+    function registerSessionKey(address sessionKey, uint48 validUntil) external onlyOwner {
+        if (sessionKey == address(0)) revert InvalidZeroAddress();
+        if (validUntil <= block.timestamp) revert VerdictExpired(validUntil, block.timestamp);
+        sessionKeys[sessionKey] = SessionKey({validUntil: validUntil, isActive: true});
+        emit SessionKeyRegistered(sessionKey, validUntil);
+    }
+
+    /**
+     * @notice Revokes a previously authorized session key.
+     * @param sessionKey The address of the session key to deactivate.
+     */
+    function revokeSessionKey(address sessionKey) external onlyOwner {
+        sessionKeys[sessionKey].isActive = false;
+        emit SessionKeyRevoked(sessionKey);
+    }
+
+    /**
+     * @notice Checks whether a given session key is currently active and within its validity window.
+     */
+    function isSessionKeyValid(address sessionKey) public view returns (bool) {
+        SessionKey memory sk = sessionKeys[sessionKey];
+        return sk.isActive && block.timestamp <= sk.validUntil;
+    }
+
+    /**
+     * @notice Executes a payment transfer when submitted by a registered and active session key.
+     * @param verdict Structured verdict containing all payment and policy parameters.
+     * @param signature Cryptographic signature of the verdict by authorizerSigner.
+     */
+    function executePaymentWithSessionKey(
+        PaymentVerdict calldata verdict,
+        bytes calldata signature
+    ) external nonReentrant {
+        if (!isSessionKeyValid(msg.sender)) {
+            revert SessionKeyInvalid(msg.sender);
+        }
+        _executePaymentInternal(verdict, signature);
+    }
+
     // --- Core Execution Method ---
 
     /**
@@ -208,6 +271,18 @@ contract MandateGuardAccount is ReentrancyGuard {
         PaymentVerdict calldata verdict,
         bytes calldata signature
     ) external nonReentrant {
+        _executePaymentInternal(verdict, signature);
+    }
+
+    function _executePaymentInternal(
+        PaymentVerdict calldata verdict,
+        bytes calldata signature
+    ) internal {
+        // 0. Emergency pause check
+        if (isPaused) {
+            revert AccountPausedError();
+        }
+
         // 1. Strict verdict verification: DENY is never executable
         if (verdict.verdict != uint8(Verdict.ALLOW)) {
             revert DenyVerdictNotExecutable();
@@ -256,23 +331,27 @@ contract MandateGuardAccount is ReentrancyGuard {
             revert AmountExceedsTxLimit(verdict.amount, mandate.maxAmountPerTx);
         }
         if (mandate.cumulativeSpent + verdict.amount > mandate.maxCumulativeAmount) {
-            revert AmountExceedsCumulativeLimit(
-                verdict.amount,
-                mandate.maxCumulativeAmount - mandate.cumulativeSpent
-            );
+            uint256 remaining = mandate.maxCumulativeAmount > mandate.cumulativeSpent
+                ? mandate.maxCumulativeAmount - mandate.cumulativeSpent
+                : 0;
+            revert AmountExceedsCumulativeLimit(verdict.amount, remaining);
         }
         if (verdict.mandateVersion != mandate.version) {
             revert MandateVersionMismatch(mandate.version, verdict.mandateVersion);
         }
 
-        // 5. Cryptographic signature verification
+        // 5. Cryptographic signature verification (Supports both ECDSA EOAs and EIP-1271 contract signers)
         bytes32 structHash = hashVerdict(verdict);
         bytes32 digest = keccak256(
             abi.encodePacked("\x19\x01", domainSeparator(), structHash)
         );
 
-        address recovered = ECDSA.recover(digest, signature);
-        if (recovered != authorizerSigner) {
+        bool isValid = SignatureChecker.isValidSignatureNow(authorizerSigner, digest, signature);
+        if (!isValid) {
+            address recovered = address(0);
+            if (signature.length == 65) {
+                (recovered,,) = ECDSA.tryRecover(digest, signature);
+            }
             revert InvalidSigner(recovered, authorizerSigner);
         }
 
@@ -313,8 +392,15 @@ contract MandateGuardAccount is ReentrancyGuard {
         if (expiry <= startTime) {
             revert VerdictExpired(expiry, startTime);
         }
+        if (maxAmountPerTx == 0 || maxCumulativeAmount == 0 || maxAmountPerTx > maxCumulativeAmount) {
+            revert AmountExceedsTxLimit(maxAmountPerTx, maxCumulativeAmount);
+        }
 
         Mandate storage mandate = mandates[mandateId];
+        if (mandate.isRegistered && maxCumulativeAmount < mandate.cumulativeSpent) {
+            revert AmountExceedsCumulativeLimit(mandate.cumulativeSpent, maxCumulativeAmount);
+        }
+
         uint256 nextVersion = mandate.isRegistered ? mandate.version + 1 : 1;
 
         mandates[mandateId] = Mandate({
@@ -382,5 +468,42 @@ contract MandateGuardAccount is ReentrancyGuard {
 
         IERC20(token).safeTransfer(to, amount);
         emit EmergencyWithdrawalExecuted(token, to, amount);
+    }
+
+    // --- EIP-1271 Contract Signature Support ---
+
+    bytes4 internal constant EIP1271_MAGICVALUE = 0x1626ba7e;
+
+    /**
+     * @notice Allows other protocols and dApps to verify whether a signature was produced by this smart account's owner.
+     * @dev Implements standard IERC1271 interface.
+     */
+    function isValidSignature(
+        bytes32 hash,
+        bytes memory signature
+    ) external view override returns (bytes4 magicValue) {
+        if (SignatureChecker.isValidSignatureNow(owner, hash, signature)) {
+            return EIP1271_MAGICVALUE;
+        }
+        return 0xffffffff;
+    }
+
+    // --- Emergency Incident Response Controls ---
+
+    /**
+     * @notice Emergency freeze function callable only by the human owner.
+     * @dev Halts all agent executePayment calls immediately during an active incident.
+     */
+    function pause() external onlyOwner {
+        isPaused = true;
+        emit AccountPaused();
+    }
+
+    /**
+     * @notice Resumes payment execution once incident is resolved.
+     */
+    function unpause() external onlyOwner {
+        isPaused = false;
+        emit AccountUnpaused();
     }
 }

@@ -19,6 +19,7 @@ from app.schemas.request import PaymentAuthorizationRequest, PaymentSettlementRe
 from app.schemas.verdict import PaymentVerdictResponse, VerdictVerifyRequest, VerdictVerifyResponse
 from app.schemas.tenant import ApiKeyCreateRequest, ApiKeyCreatedResponse, ApiKeySummaryResponse
 from app.core.auth import verify_agent_api_key
+from app.core.rate_limit import rate_limit_authorize, rate_limit_provisioning
 from sqlalchemy import select
 
 router = APIRouter()
@@ -202,7 +203,11 @@ async def revoke_mandate(mandate_id: str, db: AsyncSession = Depends(get_db)):
 # --- Agent Authentication & Provisioning Endpoints ---
 
 @router.post("/auth/api-keys", response_model=ApiKeyCreatedResponse, status_code=status.HTTP_201_CREATED, tags=["Agent Auth"])
-async def create_api_key(req: ApiKeyCreateRequest, db: AsyncSession = Depends(get_db)):
+async def create_api_key(
+    req: ApiKeyCreateRequest,
+    _rate: None = Depends(rate_limit_provisioning),
+    db: AsyncSession = Depends(get_db)
+):
     raw_key, api_key_obj = ApiKeyModel.generate(
         user_id=req.user_id,
         account_address=req.account_address,
@@ -256,6 +261,7 @@ async def revoke_api_key(key_id: str, db: AsyncSession = Depends(get_db)):
 @router.post("/authorize", response_model=PaymentVerdictResponse, tags=["Authorization"])
 async def authorize_payment(
     req: PaymentAuthorizationRequest,
+    _rate: None = Depends(rate_limit_authorize),
     agent_auth: Optional[ApiKeyModel] = Depends(verify_agent_api_key),
     db: AsyncSession = Depends(get_db)
 ):
@@ -383,3 +389,34 @@ async def list_audit_events(limit: int = 100, offset: int = 0, db: AsyncSession 
         }
         for e in events
     ]
+
+# --- Custodian & Multi-Chain Adapters (Requirements 9 & 10) ---
+
+from app.adapters.custodian_adapters import (
+    TurnkeySignerAdapter,
+    FireblocksSignerAdapter,
+    PrivyWalletAdapter,
+    CoinbaseCDPAdapter,
+)
+from app.adapters.solana_adapter import SolanaMandateGuardAdapter
+
+@router.get("/custodian/adapters", tags=["Custodians"])
+async def list_custodian_adapters():
+    adapters = [
+        TurnkeySignerAdapter(),
+        FireblocksSignerAdapter(),
+        PrivyWalletAdapter(),
+        CoinbaseCDPAdapter(),
+    ]
+    return [
+        {
+            "provider_name": a.provider_name,
+            "is_mock": a.is_mock,
+            "description": f"Verified integration adapter for {a.provider_name}"
+        }
+        for a in adapters
+    ]
+
+@router.post("/solana/pda", tags=["Solana"])
+async def derive_solana_pda(owner_pubkey: str, mandate_id: str):
+    return SolanaMandateGuardAdapter.derive_mandate_pda(owner_pubkey, mandate_id)

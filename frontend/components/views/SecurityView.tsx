@@ -176,7 +176,7 @@ export function SecurityView({
             <Layers className="w-4 h-4 text-[var(--text-muted)]" />
             <h2 className="text-sm font-semibold text-[var(--text)]">Smart Account Governance</h2>
           </div>
-          <span className="text-xs text-[var(--text-muted)]">ERC-4337 / Isolated Vault</span>
+          <span className="text-xs text-[var(--text-muted)]">EIP-712 / Isolated Vault</span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

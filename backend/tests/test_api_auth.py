@@ -105,3 +105,29 @@ async def test_api_key_lifecycle_and_account_isolation():
             }
         )
         assert revoked_res.status_code == 401
+
+@pytest.mark.asyncio
+async def test_enforce_require_api_key_when_configured():
+    """Verify that when REQUIRE_API_KEY is enabled, unauthenticated requests are rejected with 401."""
+    from app.core.config import settings
+    original_require_api_key = settings.REQUIRE_API_KEY
+    try:
+        settings.REQUIRE_API_KEY = True
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            res = await client.post(
+                "/api/v1/authorize",
+                json={
+                    "mandate_id": "0x" + "1" * 64,
+                    "account": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+                    "token": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+                    "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+                    "amount": 10_000_000,
+                    "chain_id": 31337,
+                    "idempotency_key": "unauthenticated_test_req"
+                }
+            )
+            assert res.status_code == 401
+            assert "Missing required X-API-Key" in res.json()["detail"]
+    finally:
+        settings.REQUIRE_API_KEY = original_require_api_key

@@ -646,4 +646,271 @@ contract MandateGuardAccountTest is Test {
         );
         account.executePayment(verdict, signature);
     }
+
+    // --- 18. Audit Finding: registerMandate Boundary & Underflow Defense ---
+
+    function test_RevertWhen_RegisterMandate_MaxAmountExceedsCumulative() public {
+        bytes32 badMandateId = keccak256("BAD_LIMITS_MANDATE");
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MandateGuardAccount.AmountExceedsTxLimit.selector,
+                100_000_000,
+                50_000_000
+            )
+        );
+        account.registerMandate(
+            badMandateId,
+            agent,
+            address(usdc),
+            merchant,
+            100_000_000, // per-tx > cumulative!
+            50_000_000,
+            block.timestamp,
+            block.timestamp + 30 days
+        );
+    }
+
+    function test_RevertWhen_RegisterMandate_ZeroLimits() public {
+        bytes32 zeroMandateId = keccak256("ZERO_LIMITS_MANDATE");
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MandateGuardAccount.AmountExceedsTxLimit.selector,
+                0,
+                50_000_000
+            )
+        );
+        account.registerMandate(
+            zeroMandateId,
+            agent,
+            address(usdc),
+            merchant,
+            0,
+            50_000_000,
+            block.timestamp,
+            block.timestamp + 30 days
+        );
+    }
+
+    function test_RevertWhen_RegisterMandate_LowerCumulativeThanAlreadySpent() public {
+        // 1. Spend 25 USDC
+        uint256 transferAmount = 25_000_000;
+        bytes32 authId = keccak256("AUTH_BEFORE_UPDATE");
+
+        (
+            MandateGuardAccount.PaymentVerdict memory verdict,
+            bytes memory signature
+        ) = _createAndSignVerdict(
+            1,
+            block.chainid,
+            address(account),
+            address(usdc),
+            merchant,
+            transferAmount,
+            defaultMandateId,
+            authId,
+            block.timestamp + 1 hours,
+            1,
+            authorizerPrivateKey
+        );
+        account.executePayment(verdict, signature);
+
+        // 2. Try to update mandate with maxCumulativeAmount = 10 USDC (lower than 25 USDC already spent)
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MandateGuardAccount.AmountExceedsCumulativeLimit.selector,
+                25_000_000,
+                10_000_000
+            )
+        );
+        account.registerMandate(
+            defaultMandateId,
+            agent,
+            address(usdc),
+            merchant,
+            5_000_000,
+            10_000_000, // < 25_000_000 already spent!
+            block.timestamp,
+            block.timestamp + 30 days
+        );
+    }
+
+    // --- 19. Emergency Pause Controls & EIP-1271 Verification ---
+
+    function test_RevertWhen_AccountPaused() public {
+        vm.prank(owner);
+        account.pause();
+        assertTrue(account.isPaused());
+
+        bytes32 authId = keccak256("PAUSED_AUTH_TEST");
+        (
+            MandateGuardAccount.PaymentVerdict memory verdict,
+            bytes memory signature
+        ) = _createAndSignVerdict(
+            1,
+            block.chainid,
+            address(account),
+            address(usdc),
+            merchant,
+            10_000_000,
+            defaultMandateId,
+            authId,
+            block.timestamp + 1 hours,
+            1,
+            authorizerPrivateKey
+        );
+
+        vm.expectRevert(MandateGuardAccount.AccountPausedError.selector);
+        account.executePayment(verdict, signature);
+
+        // Unpause and verify payment now succeeds
+        vm.prank(owner);
+        account.unpause();
+        assertFalse(account.isPaused());
+
+        account.executePayment(verdict, signature);
+        assertTrue(account.usedAuthorizations(authId));
+    }
+
+    function test_NonOwnerCannotPauseOrUnpause() public {
+        vm.startPrank(attacker);
+
+        vm.expectRevert(MandateGuardAccount.Unauthorized.selector);
+        account.pause();
+
+        vm.expectRevert(MandateGuardAccount.Unauthorized.selector);
+        account.unpause();
+
+        vm.stopPrank();
+    }
+
+    function test_EIP1271_OwnerSignatureVerification() public view {
+        bytes32 digest = keccak256("EIP1271_TEST_DIGEST");
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPrivateKey, digest);
+        bytes memory validOwnerSig = abi.encodePacked(r, s, v);
+
+        // Valid owner signature returns magic value 0x1626ba7e
+        bytes4 result = account.isValidSignature(digest, validOwnerSig);
+        assertEq(result, bytes4(0x1626ba7e));
+
+        // Attacker signature returns 0xffffffff
+        (uint8 vBad, bytes32 rBad, bytes32 sBad) = vm.sign(attackerPrivateKey, digest);
+        bytes memory badSig = abi.encodePacked(rBad, sBad, vBad);
+        bytes4 badResult = account.isValidSignature(digest, badSig);
+        assertEq(badResult, bytes4(0xffffffff));
+    }
+
+    // --- 24. Session Key Functionality (Requirement 8) ---
+
+    function test_SessionKey_RegisterAndExecutePayment() public {
+        address sessionSigner = makeAddr("sessionSigner");
+        uint48 validUntil = uint48(block.timestamp + 1 days);
+
+        vm.prank(owner);
+        account.registerSessionKey(sessionSigner, validUntil);
+
+        assertTrue(account.isSessionKeyValid(sessionSigner));
+
+        bytes32 authId = keccak256("AUTH_SESSION_KEY_001");
+        (
+            MandateGuardAccount.PaymentVerdict memory verdict,
+            bytes memory signature
+        ) = _createAndSignVerdict(
+            1, // ALLOW
+            block.chainid,
+            address(account),
+            address(usdc),
+            merchant,
+            10_000_000,
+            defaultMandateId,
+            authId,
+            block.timestamp + 1 hours,
+            1,
+            authorizerPrivateKey
+        );
+
+        // Session signer executes transaction successfully
+        vm.prank(sessionSigner);
+        account.executePaymentWithSessionKey(verdict, signature);
+
+        assertTrue(account.usedAuthorizations(authId));
+    }
+
+    function test_RevertWhen_SessionKeyExpired() public {
+        address sessionSigner = makeAddr("sessionSignerExpired");
+        uint48 validUntil = uint48(block.timestamp + 1 hours);
+
+        vm.prank(owner);
+        account.registerSessionKey(sessionSigner, validUntil);
+
+        // Fast-forward past expiry
+        vm.warp(block.timestamp + 2 hours);
+        assertFalse(account.isSessionKeyValid(sessionSigner));
+
+        bytes32 authId = keccak256("AUTH_SESSION_KEY_EXPIRED");
+        (
+            MandateGuardAccount.PaymentVerdict memory verdict,
+            bytes memory signature
+        ) = _createAndSignVerdict(
+            1,
+            block.chainid,
+            address(account),
+            address(usdc),
+            merchant,
+            10_000_000,
+            defaultMandateId,
+            authId,
+            block.timestamp + 10 hours,
+            1,
+            authorizerPrivateKey
+        );
+
+        vm.prank(sessionSigner);
+        vm.expectRevert(abi.encodeWithSelector(MandateGuardAccount.SessionKeyInvalid.selector, sessionSigner));
+        account.executePaymentWithSessionKey(verdict, signature);
+    }
+
+    function test_RevertWhen_SessionKeyRevoked() public {
+        address sessionSigner = makeAddr("sessionSignerRevoked");
+        uint48 validUntil = uint48(block.timestamp + 1 days);
+
+        vm.prank(owner);
+        account.registerSessionKey(sessionSigner, validUntil);
+
+        // Revoke session key
+        vm.prank(owner);
+        account.revokeSessionKey(sessionSigner);
+        assertFalse(account.isSessionKeyValid(sessionSigner));
+
+        bytes32 authId = keccak256("AUTH_SESSION_KEY_REVOKED");
+        (
+            MandateGuardAccount.PaymentVerdict memory verdict,
+            bytes memory signature
+        ) = _createAndSignVerdict(
+            1,
+            block.chainid,
+            address(account),
+            address(usdc),
+            merchant,
+            10_000_000,
+            defaultMandateId,
+            authId,
+            block.timestamp + 1 hours,
+            1,
+            authorizerPrivateKey
+        );
+
+        vm.prank(sessionSigner);
+        vm.expectRevert(abi.encodeWithSelector(MandateGuardAccount.SessionKeyInvalid.selector, sessionSigner));
+        account.executePaymentWithSessionKey(verdict, signature);
+    }
+
+    function test_RevertWhen_NonOwnerRegistersSessionKey() public {
+        address sessionSigner = makeAddr("attackerSessionKey");
+        vm.prank(attacker);
+        vm.expectRevert(MandateGuardAccount.Unauthorized.selector);
+        account.registerSessionKey(sessionSigner, uint48(block.timestamp + 1 days));
+    }
 }

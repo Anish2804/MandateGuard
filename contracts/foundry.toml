@@ -16,3 +16,8 @@ fs_permissions = [{ access = "read-write", path = "./" }]
 [rpc_endpoints]
 local = "http://127.0.0.1:8545"
 base_sepolia = "https://sepolia.base.org"
+
+[invariant]
+runs = 64
+depth = 32
+fail_on_revert = false

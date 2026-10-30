@@ -210,7 +210,7 @@ export function OverviewView({
           </div>
 
           <div className="pt-4 mt-4 border-t border-[var(--border)] flex items-center justify-between text-[11px] text-[var(--text-subtle)]">
-            <span>Isolation: ERC-4337 Smart Account</span>
+            <span>Isolation: EIP-712 Guarded Smart Account</span>
             <span className="tabular-nums">Last checked: Just now</span>
           </div>
         </div>
